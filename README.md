@@ -8,7 +8,7 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 
 | Paso | Qué incluye | Estado |
 |---|---|---|
-| 1. Visor | Abrir, miniaturas, pasar páginas, zoom, buscar, imprimir | Hecho |
+| 1. Visor | Abrir, guardar, miniaturas, pasar páginas, zoom, buscar, imprimir | Hecho |
 | 2. OCR | Botón "Hacer editable" con Tesseract (español e inglés) | Pendiente |
 | 3. Editar texto | Corregir texto dentro del PDF y exportar a Word | Pendiente |
 | 4. Instalador | Un único `.exe` con todo incluido | Pendiente |
@@ -28,6 +28,7 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | Acción | Teclas |
 |---|---|
 | Abrir | Ctrl+O |
+| Guardar / Guardar como | Ctrl+S / Ctrl+Mayús+S |
 | Imprimir | Ctrl+P |
 | Buscar | Ctrl+F, después Intro o F3 (siguiente) y Mayús+F3 (anterior) |
 | Acercar / alejar | Ctrl + / Ctrl -, o Ctrl + rueda del ratón |

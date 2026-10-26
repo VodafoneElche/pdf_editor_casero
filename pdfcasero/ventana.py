@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QSizePolicy,
     QStyle,
@@ -158,7 +159,7 @@ class VentanaPrincipal(QMainWindow):
 
     # --- Interfaz ---------------------------------------------------------
     def _accion(self, texto, icono_nombre, atajo, funcion, consejo=None):
-        a = QAction(icono(icono_nombre), texto, self)
+        a = QAction(icono(icono_nombre) if icono_nombre else QIcon(), texto, self)
         if atajo:
             a.setShortcuts(atajo if isinstance(atajo, list) else [atajo])
         a.setToolTip(consejo or texto)
@@ -169,6 +170,11 @@ class VentanaPrincipal(QMainWindow):
     def _crear_acciones(self):
         S = QKeySequence.StandardKey
         self.acc_abrir = self._accion("Abrir", "DocumentOpen", S.Open, self.abrir_dialogo, "Abrir un PDF (Ctrl+O)")
+        self.acc_guardar = self._accion("Guardar", "DocumentSave", S.Save, self.guardar, "Guardar (Ctrl+S)")
+        self.acc_guardar_como = self._accion(
+            "Guardar como", "DocumentSaveAs", QKeySequence("Ctrl+Shift+S"), self.guardar_como,
+            "Guardar una copia con otro nombre (Ctrl+Mayús+S)",
+        )
         self.acc_imprimir = self._accion("Imprimir", "DocumentPrint", S.Print, self._imprimir, "Imprimir (Ctrl+P)")
         self.acc_anterior = self._accion("Anterior", "GoPrevious", [], self.visor.pagina_anterior, "Página anterior")
         self.acc_siguiente = self._accion("Siguiente", "GoNext", [], self.visor.pagina_siguiente, "Página siguiente")
@@ -177,10 +183,12 @@ class VentanaPrincipal(QMainWindow):
             "Acercar", "ZoomIn", [QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")], self.visor.acercar, "Acercar (Ctrl +)"
         )
         self.acc_ancho = self._accion(
-            "Ajustar al ancho", "ZoomFitBest", QKeySequence("Ctrl+0"), self.visor.zoom_ajustar_ancho
+            "Ancho", "ZoomFitBest", QKeySequence("Ctrl+0"), self.visor.zoom_ajustar_ancho,
+            "Ajustar al ancho de la ventana (Ctrl+0)",
         )
         self.acc_completa = self._accion(
-            "Página completa", "ZoomFitBest", QKeySequence("Ctrl+1"), self.visor.zoom_pagina_completa
+            "Página", "ZoomFitBest", QKeySequence("Ctrl+1"), self.visor.zoom_pagina_completa,
+            "Ver la página completa (Ctrl+1)",
         )
         self.acc_buscar = self._accion("Buscar", "EditFind", S.Find, self._enfocar_busqueda, "Buscar (Ctrl+F)")
         self.acc_cerrar = self._accion("Cerrar", "WindowClose", S.Close, self.cerrar_documento, "Cerrar PDF (Ctrl+W)")
@@ -189,7 +197,7 @@ class VentanaPrincipal(QMainWindow):
         for a, teclas in ((self.acc_siguiente, ["Ctrl+Right"]), (self.acc_anterior, ["Ctrl+Left"])):
             a.setShortcuts([QKeySequence(t) for t in teclas])
         self._acciones_doc = [
-            self.acc_imprimir, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
+            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
             self.acc_ancho, self.acc_completa, self.acc_buscar, self.acc_cerrar,
         ]
 
@@ -202,6 +210,7 @@ class VentanaPrincipal(QMainWindow):
         self.addToolBar(barra)
 
         barra.addAction(self.acc_abrir)
+        barra.addAction(self.acc_guardar)
         barra.addAction(self.acc_imprimir)
         barra.addSeparator()
         barra.addAction(self.acc_anterior)
@@ -231,20 +240,30 @@ class VentanaPrincipal(QMainWindow):
         self.campo_buscar = QLineEdit()
         self.campo_buscar.setPlaceholderText("Buscar en el documento…")
         self.campo_buscar.setClearButtonEnabled(True)
-        self.campo_buscar.setFixedWidth(240)
+        self.campo_buscar.setMinimumWidth(160)
+        self.campo_buscar.setMaximumWidth(240)
         self.campo_buscar.returnPressed.connect(self._buscar_siguiente)
         self.campo_buscar.textChanged.connect(self._texto_busqueda_cambiado)
         barra.addWidget(self.campo_buscar)
         self.etiqueta_resultados = QLabel("")
         self.etiqueta_resultados.setMinimumWidth(70)
         barra.addWidget(self.etiqueta_resultados)
-        self.acc_res_ant = self._accion("", "GoUp", QKeySequence("Shift+F3"), self._buscar_anterior, "Resultado anterior")
-        self.acc_res_sig = self._accion("", "GoDown", QKeySequence("F3"), self._buscar_siguiente, "Resultado siguiente")
+        self.acc_res_ant = self._accion("▲", None, QKeySequence("Shift+F3"), self._buscar_anterior, "Resultado anterior")
+        self.acc_res_sig = self._accion("▼", None, QKeySequence("F3"), self._buscar_siguiente, "Resultado siguiente")
         barra.addAction(self.acc_res_ant)
         barra.addAction(self.acc_res_sig)
         self._acciones_doc += [self.acc_res_ant, self.acc_res_sig]
         barra.addSeparator()
-        barra.addAction(self.acc_acerca)
+        # Lo que se usa menos va en un menú para que la barra quepa en pantallas pequeñas
+        menu = QMenu(self)
+        for a in (self.acc_guardar_como, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
+            menu.addAction(a)
+        boton_mas = QToolButton()
+        boton_mas.setText("Más")
+        boton_mas.setToolTip("Más opciones")
+        boton_mas.setMenu(menu)
+        boton_mas.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        barra.addWidget(boton_mas)
 
     def _actualizar_estado(self):
         hay = self.doc is not None
@@ -256,7 +275,8 @@ class VentanaPrincipal(QMainWindow):
         if hay:
             self.campo_pagina.setValidator(QIntValidator(1, self.doc.num_paginas, self))
             self.etiqueta_total.setText(f" de {self.doc.num_paginas} ")
-            self.setWindowTitle(f"{self.doc.titulo} – PDF Casero")
+            marca = "● " if self.doc.modificado else ""
+            self.setWindowTitle(f"{marca}{self.doc.titulo} – PDF Casero")
         else:
             self.etiqueta_total.setText(" de 0 ")
             self.campo_pagina.setText("")
@@ -290,7 +310,9 @@ class VentanaPrincipal(QMainWindow):
                 QMessageBox.critical(self, "No se pudo abrir", f"No se pudo abrir el archivo:\n{ruta}\n\n{e}")
                 return False
 
-        self.cerrar_documento()
+        if not self.cerrar_documento():
+            doc.cerrar()
+            return False
         self.doc = doc
         self._actualizar_estado()
         self.visor.cargar(doc)
@@ -300,7 +322,10 @@ class VentanaPrincipal(QMainWindow):
         self.statusBar().showMessage(f"{Path(ruta).name} · {doc.num_paginas} páginas", 5000)
         return True
 
-    def cerrar_documento(self):
+    def cerrar_documento(self) -> bool:
+        """Cierra el PDF. Devuelve False si el usuario cancela por tener cambios sin guardar."""
+        if not self._confirmar_cambios():
+            return False
         self._temporizador_mini.stop()
         self.miniaturas.clear()
         self.visor.cargar(None)
@@ -309,6 +334,52 @@ class VentanaPrincipal(QMainWindow):
             self.doc.cerrar()
             self.doc = None
         self._actualizar_estado()
+        return True
+
+    # --- Guardar ----------------------------------------------------------
+    def guardar(self) -> bool:
+        if not self.doc:
+            return False
+        if not self.doc.modificado:
+            self.statusBar().showMessage("No hay cambios que guardar", 4000)
+            return True
+        return self._guardar_en(None)
+
+    def guardar_como(self) -> bool:
+        if not self.doc:
+            return False
+        sugerido = str(self.doc.ruta.with_name(self.doc.ruta.stem + " (copia).pdf"))
+        ruta, _ = QFileDialog.getSaveFileName(self, "Guardar como", sugerido, "Documentos PDF (*.pdf)")
+        if not ruta:
+            return False
+        if not ruta.lower().endswith(".pdf"):
+            ruta += ".pdf"
+        if self._guardar_en(ruta):
+            self._anadir_reciente(str(self.doc.ruta))
+            return True
+        return False
+
+    def _guardar_en(self, ruta) -> bool:
+        try:
+            destino = self.doc.guardar(ruta)
+        except Exception as e:
+            QMessageBox.critical(self, "No se pudo guardar", f"No se pudo guardar el archivo.\n\n{e}")
+            return False
+        self._actualizar_estado()
+        self.statusBar().showMessage(f"Guardado en {destino}", 5000)
+        return True
+
+    def _confirmar_cambios(self) -> bool:
+        if not self.doc or not self.doc.modificado:
+            return True
+        r = QMessageBox.question(
+            self, "Cambios sin guardar", f"¿Quieres guardar los cambios en «{self.doc.ruta.name}»?",
+            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        if r == QMessageBox.StandardButton.Save:
+            return self.guardar()
+        return r == QMessageBox.StandardButton.Discard
 
     # --- Recientes --------------------------------------------------------
     def recientes(self) -> list[str]:
@@ -449,6 +520,8 @@ class VentanaPrincipal(QMainWindow):
                 break
 
     def closeEvent(self, e):
+        if not self.cerrar_documento():
+            e.ignore()
+            return
         self.ajustes.setValue("geometria", self.saveGeometry())
-        self.cerrar_documento()
         super().closeEvent(e)

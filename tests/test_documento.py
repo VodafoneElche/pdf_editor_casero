@@ -56,3 +56,26 @@ def test_contrasena(tmp_path):
     with pytest.raises(ContrasenaNecesaria):
         Documento(ruta, "mal")
     assert Documento(ruta, "1234").num_paginas == 1
+
+
+def test_guardar_como_y_guardar(pdf_ejemplo, tmp_path):
+    d = Documento(pdf_ejemplo)
+    copia = d.guardar(tmp_path / "copia.pdf")
+    assert copia.exists() and d.ruta == copia and not d.modificado
+    assert Documento(copia).num_paginas == 4
+    # Guardar encima del mismo archivo y seguir usándolo
+    d.modificado = True
+    d.guardar()
+    assert not d.modificado
+    assert d.buscar("factura")
+    assert [p.name for p in tmp_path.glob("tmp*.pdf")] == []
+
+
+def test_guardar_pdf_con_contrasena(tmp_path):
+    ruta = tmp_path / "secreto.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "secreto")
+    doc.save(ruta, encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw="1234", owner_pw="1234")
+    d = Documento(ruta, "1234")
+    d.guardar()
+    assert d.num_paginas == 1 and d.buscar("secreto")

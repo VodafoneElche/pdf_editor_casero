@@ -1,6 +1,6 @@
 # PDF Casero
 
-Lector y editor de PDF para uso familiar en Windows 10 y 11. Solo lo esencial: leer PDF, reconocer texto de documentos escaneados (OCR), editar el texto y convertir PDF no editables en editables.
+Lector y editor de PDF para uso familiar en Windows 10 y 11. Solo lo esencial: leer PDF, reconocer texto de documentos escaneados (OCR), editar el texto y convertir PDF no editables en editables, además de dibujar esquemas (flechas, globos, líneas…).
 
 Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-6/) (Qt) para la interfaz y [PyMuPDF](https://pymupdf.readthedocs.io/) para leer y dibujar los PDF.
 
@@ -11,7 +11,8 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | 1. Visor | Abrir, guardar, miniaturas, pasar páginas, zoom, buscar, imprimir | Hecho |
 | 2. OCR | Botón "Hacer editable" con Tesseract (español e inglés) | Pendiente |
 | 3. Editar texto | Corregir texto dentro del PDF y exportar a Word | Pendiente |
-| 4. Instalador | Un único `.exe` con todo incluido | Pendiente |
+| 4. Dibujo y esquemas | Flechas, globos, líneas, formas, texto y lápiz, editables después | Pendiente |
+| 5. Instalador | Un único `.exe` con todo incluido | Pendiente |
 
 ## Probarlo ahora (antes de tener el instalador)
 

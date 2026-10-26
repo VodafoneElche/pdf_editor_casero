@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QRect, QSettings, QSize, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QIcon, QImage, QIntValidator, QKeySequence, QPainter, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QImage, QIntValidator, QKeySequence, QPainter, QPixmap
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -156,6 +157,7 @@ class VentanaPrincipal(QMainWindow):
 
         self._crear_acciones()
         self._crear_barra()
+        self._crear_barra_dibujo()
         self.visor.paginaCambiada.connect(self._pagina_cambiada)
         self.visor.zoomCambiado.connect(self._zoom_cambiado)
         self.visor.documentoEditado.connect(self._documento_editado)
@@ -190,6 +192,11 @@ class VentanaPrincipal(QMainWindow):
             "Cambiar, borrar o escribir texto (Ctrl+T)",
         )
         self.acc_editar.setCheckable(True)
+        self.acc_dibujar = self._accion(
+            "Dibujar", None, QKeySequence("Ctrl+D"), self._cambiar_modo_dibujo,
+            "Flechas, líneas, formas, globos, texto y lápiz (Ctrl+D)",
+        )
+        self.acc_dibujar.setCheckable(True)
         self.acc_deshacer = self._accion("↶", None, S.Undo, self.deshacer, "Deshacer (Ctrl+Z)")
         self.acc_rehacer = self._accion("↷", None, [QKeySequence("Ctrl+Y"), QKeySequence("Ctrl+Shift+Z")], self.rehacer, "Rehacer (Ctrl+Y)")
         self.acc_ocr = self._accion(
@@ -218,7 +225,7 @@ class VentanaPrincipal(QMainWindow):
         for a, teclas in ((self.acc_siguiente, ["Ctrl+Right"]), (self.acc_anterior, ["Ctrl+Left"])):
             a.setShortcuts([QKeySequence(t) for t in teclas])
         self._acciones_doc = [
-            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
+            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
             self.acc_ancho, self.acc_completa, self.acc_buscar, self.acc_cerrar,
         ]
 
@@ -232,10 +239,10 @@ class VentanaPrincipal(QMainWindow):
 
         barra.addAction(self.acc_abrir)
         barra.addAction(self.acc_guardar)
-        barra.addAction(self.acc_imprimir)
         barra.addSeparator()
         barra.addAction(self.acc_ocr)
         barra.addAction(self.acc_editar)
+        barra.addAction(self.acc_dibujar)
         barra.addAction(self.acc_deshacer)
         barra.addAction(self.acc_rehacer)
         barra.addSeparator()
@@ -280,7 +287,7 @@ class VentanaPrincipal(QMainWindow):
         barra.addSeparator()
         # Lo que se usa menos va en un menú para que la barra quepa en pantallas pequeñas
         menu = QMenu(self)
-        for a in (self.acc_guardar_como, self.acc_ancho, self.acc_completa, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
+        for a in (self.acc_guardar_como, self.acc_imprimir, self.acc_ancho, self.acc_completa, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
             menu.addAction(a)
         boton_mas = QToolButton()
         boton_mas.setText("Más")
@@ -306,9 +313,10 @@ class VentanaPrincipal(QMainWindow):
         else:
             self.acc_deshacer.setEnabled(False)
             self.acc_rehacer.setEnabled(False)
-            if self.acc_editar.isChecked():
-                self.acc_editar.setChecked(False)
-                self._cambiar_modo_edicion(False)
+            for accion in (self.acc_editar, self.acc_dibujar):
+                if accion.isChecked():
+                    accion.setChecked(False)
+            self._poner_modo("leer")
             self.etiqueta_total.setText(" de 0 ")
             self.campo_pagina.setText("")
             self.setWindowTitle("PDF Casero")
@@ -526,14 +534,125 @@ class VentanaPrincipal(QMainWindow):
 
     # --- Editar texto ----------------------------------------------------
     def _cambiar_modo_edicion(self, activo: bool):
-        self.visor.set_modo_edicion(activo)
         if activo:
-            self.statusBar().showMessage(
-                "Editar texto: haz clic en una línea para cambiarla (déjala vacía para borrarla) o en un hueco para "
-                "escribir. Intro acepta, Esc cancela."
-            )
+            self.acc_dibujar.setChecked(False)
+        self._poner_modo("editar" if activo else "leer")
+
+    def _cambiar_modo_dibujo(self, activo: bool):
+        if activo:
+            self.acc_editar.setChecked(False)
+        self._poner_modo("dibujar" if activo else "leer")
+
+    def _poner_modo(self, modo: str):
+        self.visor.set_modo(modo)
+        self.barra_dibujo.setVisible(modo == "dibujar")
+        mensajes = {
+            "editar": "Editar texto: haz clic en una línea para cambiarla (déjala vacía para borrarla) o en un hueco "
+            "para escribir. Intro acepta, Esc cancela.",
+            "dibujar": "Dibujar: elige herramienta y arrastra. Con Seleccionar mueves, estiras (cuadraditos), "
+            "cambias color o borras (Supr). Doble clic cambia el texto de un globo.",
+        }
+        if modo in mensajes:
+            self.statusBar().showMessage(mensajes[modo])
         else:
             self.statusBar().clearMessage()
+
+    # --- Barra de dibujo ---------------------------------------------------
+    COLORES = (
+        ("Rojo", (0.85, 0.1, 0.1)),
+        ("Azul", (0.1, 0.35, 0.85)),
+        ("Verde", (0.1, 0.6, 0.2)),
+        ("Naranja", (0.95, 0.55, 0.0)),
+        ("Morado", (0.5, 0.2, 0.7)),
+        ("Negro", (0.0, 0.0, 0.0)),
+    )
+    GROSORES = (("Fino", 1.0), ("Normal", 2.0), ("Grueso", 4.0), ("Muy grueso", 7.0))
+    HERRAMIENTAS = (
+        ("seleccionar", "Seleccionar", "Seleccionar, mover y estirar dibujos"),
+        ("flecha", "Flecha", "Arrastra desde el inicio hasta la punta"),
+        ("linea", "Línea", "Arrastra para trazar una línea"),
+        ("rect", "Rectángulo", "Arrastra de una esquina a la otra"),
+        ("elipse", "Círculo", "Arrastra para dibujar un círculo o elipse"),
+        ("globo", "Globo", "Arrastra desde lo que quieres señalar hasta donde irá el globo"),
+        ("texto", "Texto", "Haz clic donde quieras escribir"),
+        ("lapiz", "Lápiz", "Dibuja a mano alzada"),
+    )
+
+    def _crear_barra_dibujo(self):
+        barra = QToolBar("Dibujo")
+        barra.setObjectName("barraDibujo")
+        barra.setMovable(False)
+        self.addToolBarBreak()
+        self.addToolBar(barra)
+        control = self.visor.dibujo
+
+        grupo = QActionGroup(self)
+        self._acciones_herramienta = {}
+        for clave, texto, consejo in self.HERRAMIENTAS:
+            a = QAction(texto, self, checkable=True)
+            a.setToolTip(consejo)
+            a.triggered.connect(lambda _=False, c=clave: self._elegir_herramienta(c))
+            grupo.addAction(a)
+            barra.addAction(a)
+            self._acciones_herramienta[clave] = a
+        self._acciones_herramienta["seleccionar"].setChecked(True)
+        barra.addSeparator()
+
+        grupo_color = QActionGroup(self)
+        self._acciones_color = []
+        for nombre, rgb in self.COLORES:
+            pix = QPixmap(18, 18)
+            pix.fill(QColor.fromRgbF(*rgb))
+            a = QAction(QIcon(pix), "", self, checkable=True)
+            a.setToolTip(nombre)
+            a.triggered.connect(lambda _=False, c=rgb: control.aplicar_estilo(color=c))
+            grupo_color.addAction(a)
+            barra.addAction(a)
+            self._acciones_color.append((rgb, a))
+        self._acciones_color[0][1].setChecked(True)
+        barra.addSeparator()
+
+        self.combo_grosor = QComboBox()
+        for nombre, valor in self.GROSORES:
+            self.combo_grosor.addItem(nombre, valor)
+        self.combo_grosor.setCurrentIndex(1)
+        self.combo_grosor.setToolTip("Grosor de la línea")
+        self.combo_grosor.activated.connect(
+            lambda i: control.aplicar_estilo(grosor=self.combo_grosor.itemData(i))
+        )
+        barra.addWidget(self.combo_grosor)
+        self.acc_relleno = QAction("Relleno", self, checkable=True)
+        self.acc_relleno.setToolTip("Rellenar rectángulos y círculos con un color suave")
+        self.acc_relleno.triggered.connect(lambda v: control.aplicar_estilo(relleno=v))
+        barra.addAction(self.acc_relleno)
+        barra.addSeparator()
+        self.acc_borrar_dibujo = QAction("Borrar dibujo", self)
+        self.acc_borrar_dibujo.setToolTip("Borrar el dibujo seleccionado (Supr)")
+        self.acc_borrar_dibujo.triggered.connect(control.borrar_seleccion)
+        self.acc_borrar_dibujo.setEnabled(False)
+        barra.addAction(self.acc_borrar_dibujo)
+        control.al_cambiar_seleccion = self._dibujo_seleccionado
+        barra.hide()
+        self.barra_dibujo = barra
+
+    def _elegir_herramienta(self, clave):
+        self.visor.dibujo.herramienta = clave
+        if clave != "seleccionar":
+            self.visor.dibujo.seleccionar(None)
+
+    def _dibujo_seleccionado(self, d):
+        """Al seleccionar un dibujo, la barra muestra su color y su grosor."""
+        self.acc_borrar_dibujo.setEnabled(d is not None)
+        if d is None:
+            return
+        control = self.visor.dibujo
+        control.color, control.grosor, control.relleno = d.color, d.grosor, d.relleno
+        for rgb, a in self._acciones_color:
+            if all(abs(x - y) < 0.02 for x, y in zip(rgb, d.color)):
+                a.setChecked(True)
+        indice = min(range(len(self.GROSORES)), key=lambda i: abs(self.GROSORES[i][1] - d.grosor))
+        self.combo_grosor.setCurrentIndex(indice)
+        self.acc_relleno.setChecked(d.relleno)
 
     def _documento_editado(self):
         self._texto_buscado = ""

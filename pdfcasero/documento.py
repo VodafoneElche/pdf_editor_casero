@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pymupdf
 
-from . import edicion
+from . import dibujo, edicion
 
 MAX_DESHACER = 30
 
@@ -144,6 +144,31 @@ class Documento:
             return
         self._antes_de_cambiar()
         edicion.escribir(self._doc[n], pymupdf.Point(x, y), texto, tamano)
+        self._despues_de_cambiar(n)
+
+    # --- Dibujos ------------------------------------------------------------
+    def dibujo_en(self, n: int, x: float, y: float):
+        return dibujo.dibujo_en(self._doc[n], (x, y))
+
+    def dibujos(self, n: int):
+        return dibujo.dibujos(self._doc[n])
+
+    def anadir_dibujo(self, n: int, d: "dibujo.Dibujo") -> int:
+        self._antes_de_cambiar()
+        xref = dibujo.crear(self._doc[n], d).xref
+        self._despues_de_cambiar(n)
+        return xref
+
+    def cambiar_dibujo(self, n: int, xref: int, d: "dibujo.Dibujo") -> int:
+        """Sustituye un dibujo por su versión modificada. Devuelve la nueva referencia."""
+        self._antes_de_cambiar()
+        nuevo = dibujo.reemplazar(self._doc[n], xref, d)
+        self._despues_de_cambiar(n)
+        return nuevo
+
+    def borrar_dibujo(self, n: int, xref: int) -> None:
+        self._antes_de_cambiar()
+        dibujo.borrar(self._doc[n], xref)
         self._despues_de_cambiar(n)
 
     @property

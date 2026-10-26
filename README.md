@@ -11,7 +11,7 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | 1. Visor | Abrir, guardar, miniaturas, pasar páginas, zoom, buscar, imprimir | Hecho |
 | 2. OCR | Botón "Hacer editable" con Tesseract (español e inglés), seleccionar y copiar texto | Hecho |
 | 3. Editar texto | Cambiar, borrar y escribir texto dentro del PDF, con deshacer | Hecho |
-| 4. Dibujo y esquemas | Flechas, globos, líneas, formas, texto y lápiz, editables después | Pendiente |
+| 4. Dibujo y esquemas | Flechas, globos, líneas, formas, texto y lápiz, editables después | Hecho |
 | 5. Formularios | Crear casillas rellenables y rellenar formularios recibidos | Pendiente |
 | 6. Instalador | Un único `.exe` con todo incluido | Pendiente |
 
@@ -45,15 +45,29 @@ Funciona también en PDF escaneados después de "Hacer editable": la línea orig
 
 Los PDF guardan letras sueltas, no párrafos, por eso se edita línea a línea y el texto no se recoloca solo si la línea nueva es más larga.
 
+## Dibujar y hacer esquemas
+
+Pulsa **Dibujar** (Ctrl+D) y aparece una segunda barra con las herramientas:
+
+- **Flecha, Línea, Rectángulo, Círculo:** arrastra sobre la página.
+- **Globo:** arrastra desde lo que quieres señalar hasta donde irá el globo y escribe el texto.
+- **Texto:** haz clic y escribe.
+- **Lápiz:** dibuja a mano alzada.
+- **Color, grosor y relleno:** se aplican a lo que dibujes y al dibujo seleccionado.
+- **Seleccionar:** clic en un dibujo para seleccionarlo. Arrástralo para moverlo, o tira de sus cuadraditos para estirarlo. Doble clic en un globo o texto para cambiar lo que pone. Supr lo borra.
+
+Los dibujos se guardan como anotaciones PDF estándar, así que se ven en cualquier lector (Adobe, Edge, Chrome…).
+
 ## Atajos de teclado
 
 | Acción | Teclas |
 |---|---|
 | Abrir | Ctrl+O |
 | Guardar / Guardar como | Ctrl+S / Ctrl+Mayús+S |
-| Imprimir | Ctrl+P |
+| Imprimir (también en "Más") | Ctrl+P |
 | Hacer editable (OCR) | Ctrl+E |
 | Editar texto | Ctrl+T |
+| Dibujar | Ctrl+D |
 | Deshacer / rehacer | Ctrl+Z / Ctrl+Y |
 | Borrar el texto seleccionado | Supr |
 | Copiar el texto seleccionado | Ctrl+C (Ctrl+A selecciona toda la página) |
@@ -81,6 +95,8 @@ Estructura:
 - `pdfcasero/ocr.py`: reconocimiento de texto y capa de texto invisible.
 - `pdfcasero/dialogo_ocr.py`: el OCR en segundo plano, con barra de progreso.
 - `pdfcasero/edicion.py`: cambiar, borrar y escribir texto en la página.
+- `pdfcasero/dibujo.py`: los dibujos como anotaciones PDF, con su receta para poder retocarlos.
+- `pdfcasero/herramientas_dibujo.py`: ratón y teclado del modo Dibujo.
 - `pdfcasero/impresion.py`: impresión.
 - `pdfcasero/estilo.py`: colores y aspecto.
 

@@ -9,6 +9,7 @@ from PySide6.QtGui import QAction, QColor, QGuiApplication, QImage, QKeySequence
 from PySide6.QtWidgets import QLineEdit, QMenu, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from .documento import Documento, Resultado
+from .herramientas_dibujo import ControladorDibujo
 
 # 100 % de zoom = tamaño real en una pantalla de 96 ppp
 PUNTOS_A_PIXELES = 96 / 72
@@ -29,16 +30,37 @@ class PaginaWidget(QWidget):
     def _punto_pdf(self, evento) -> QPointF:
         return evento.position() / self.visor.escala
 
+    def _tupla(self, evento) -> tuple[float, float]:
+        p = self._punto_pdf(evento)
+        return (p.x(), p.y())
+
+    @property
+    def _dibujando(self) -> bool:
+        return self.visor.modo == "dibujar"
+
+    def mouseReleaseEvent(self, e):
+        if self._dibujando and e.button() == Qt.MouseButton.LeftButton:
+            self.visor.dibujo.soltar(self.indice, self._tupla(e))
+
     def mousePressEvent(self, e):
         if e.button() != Qt.MouseButton.LeftButton:
             return
-        if self.visor.modo_edicion:
+        if self._dibujando:
+            self.visor.dibujo.pulsar(self.indice, self._tupla(e))
+        elif self.visor.modo_edicion:
             self.visor.editar_en(self, self._punto_pdf(e))
         else:
             self.visor.empezar_seleccion(self.indice, self._punto_pdf(e))
 
     def mouseMoveEvent(self, e):
         p = self._punto_pdf(e)
+        if self._dibujando:
+            self.setCursor(
+                Qt.CursorShape.ArrowCursor if self.visor.dibujo.herramienta == "seleccionar" else Qt.CursorShape.CrossCursor
+            )
+            if e.buttons() & Qt.MouseButton.LeftButton:
+                self.visor.dibujo.arrastrar(self.indice, self._tupla(e))
+            return
         if self.visor.modo_edicion:
             self.setCursor(Qt.CursorShape.IBeamCursor)
             return
@@ -48,6 +70,9 @@ class PaginaWidget(QWidget):
         self.setCursor(Qt.CursorShape.IBeamCursor if sobre_texto else Qt.CursorShape.ArrowCursor)
 
     def mouseDoubleClickEvent(self, e):
+        if self._dibujando:
+            self.visor.dibujo.doble_clic(self.indice, self._tupla(e))
+            return
         if self.visor.modo_edicion:
             return
         i = self.visor.palabra_en(self.indice, self._punto_pdf(e), exacta=True)
@@ -71,6 +96,9 @@ class PaginaWidget(QWidget):
             color = QColor(255, 140, 0, 120) if activo else QColor(255, 230, 0, 100)
             r = res.rect
             p.fillRect(QRectF(r.x0 * escala, r.y0 * escala, r.width * escala, r.height * escala), color)
+        if self._dibujando:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            self.visor.dibujo.pintar(p, self.indice, escala)
         p.end()
 
 
@@ -145,7 +173,8 @@ class VisorPDF(QScrollArea):
         self.acc_borrar.setShortcut(QKeySequence.StandardKey.Delete)
         self.acc_borrar.triggered.connect(self.borrar_seleccion)
         self.addActions([self.acc_copiar, self.acc_sel_pagina, self.acc_borrar])
-        self.modo_edicion = False
+        self.modo = "leer"
+        self.dibujo = ControladorDibujo(self)
         self._editor: EditorEnLinea | None = None
 
         self.setWidgetResizable(True)
@@ -171,6 +200,7 @@ class VisorPDF(QScrollArea):
         self._cache.clear()
         self._resultados, self._activo = [], -1
         self._seleccion = self._ancla = None
+        self.dibujo.cancelar()
         self.doc = doc
         if doc is None:
             return
@@ -380,10 +410,33 @@ class VisorPDF(QScrollArea):
         self.acc_copiar.setEnabled(True)
 
     # --- Edición de texto ---------------------------------------------------
-    def set_modo_edicion(self, activo: bool):
-        self.modo_edicion = activo
+    @property
+    def modo_edicion(self) -> bool:
+        return self.modo == "editar"
+
+    def set_modo(self, modo: str):
+        """'leer' (seleccionar texto), 'editar' (texto) o 'dibujar'."""
+        self.modo = modo
         self._seleccion = self._ancla = None
+        self.dibujo.cancelar()
         self._repintar()
+
+    def set_modo_edicion(self, activo: bool):
+        self.set_modo("editar" if activo else "leer")
+
+    def pedir_texto(self, n, p, texto, al_terminar, tamano=14):
+        """Abre un cuadro para escribir en el punto p (en puntos PDF) de la página n."""
+        if self._editor is not None:
+            return
+        escala = self.escala
+
+        def terminar(nuevo):
+            self._editor = None
+            if nuevo is not None:
+                al_terminar(nuevo.strip())
+
+        rect = QRectF(p[0] * escala, p[1] * escala, 0, tamano * escala * 1.2)
+        self._editor = EditorEnLinea(self._paginas[n], rect, texto, tamano * escala, terminar)
 
     def editar_en(self, pagina: PaginaWidget, p: QPointF):
         """Clic en modo edición: cambiar la línea que hay debajo, o escribir texto nuevo."""
@@ -417,13 +470,18 @@ class VisorPDF(QScrollArea):
         self._editor = EditorEnLinea(pagina, rect, texto, tamano * escala, terminar, fuente_pdf)
 
     def borrar_seleccion(self):
+        if self.modo == "dibujar":
+            self.dibujo.borrar_seleccion()
+            return
         if self.doc is None or not self._seleccion:
             return
         self.doc.borrar_palabras(*self._seleccion)
         self.documento_cambiado()
 
-    def documento_cambiado(self):
+    def documento_cambiado(self, conservar_dibujo: bool = False):
         """El contenido de la página ha cambiado: volver a dibujar."""
+        if not conservar_dibujo:
+            self.dibujo.cancelar()
         self._cache.clear()
         self._seleccion = self._ancla = None
         self._resultados, self._activo = [], -1

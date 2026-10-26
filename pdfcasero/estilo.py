@@ -4,6 +4,7 @@ ACENTO = "#c4302b"
 
 HOJA_ESTILO = f"""
 QMainWindow, #bienvenida {{ background: #f5f5f7; }}
+QToolBar#barraDibujo {{ background: #fafafb; border: none; border-bottom: 1px solid #dddde1; padding: 2px 8px; spacing: 4px; }}
 QToolBar#barraPrincipal {{
     background: #ffffff; border: none; border-bottom: 1px solid #dddde1;
     padding: 4px 8px; spacing: 4px;

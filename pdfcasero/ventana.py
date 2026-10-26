@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QRect, QSettings, QSize, Qt, QTimer
+from PySide6.QtCore import QEventLoop, QRect, QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QImage, QIntValidator, QKeySequence, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QMenu,
+    QProgressDialog,
     QMessageBox,
     QSizePolicy,
     QStyle,
@@ -28,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__
+from .dialogo_ocr import HiloOCR, asegurar_idiomas, elegir_paginas
 from .documento import ContrasenaNecesaria, Documento
 from .impresion import imprimir
 from .visor import VisorPDF
@@ -137,7 +140,13 @@ class VentanaPrincipal(QMainWindow):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self.miniaturas)
-        lay.addWidget(self.visor, 1)
+        derecha = QVBoxLayout()
+        derecha.setContentsMargins(0, 0, 0, 0)
+        derecha.setSpacing(0)
+        self.aviso_escaneado = self._crear_aviso_escaneado()
+        derecha.addWidget(self.aviso_escaneado)
+        derecha.addWidget(self.visor, 1)
+        lay.addLayout(derecha, 1)
 
         self.bienvenida = Bienvenida(self)
         self.pila = QStackedWidget()
@@ -175,12 +184,16 @@ class VentanaPrincipal(QMainWindow):
             "Guardar como", "DocumentSaveAs", QKeySequence("Ctrl+Shift+S"), self.guardar_como,
             "Guardar una copia con otro nombre (Ctrl+Mayús+S)",
         )
+        self.acc_ocr = self._accion(
+            "Hacer editable", None, QKeySequence("Ctrl+E"), self.hacer_editable,
+            "Reconocer el texto de un PDF escaneado para poder buscarlo y copiarlo (Ctrl+E)",
+        )
         self.acc_imprimir = self._accion("Imprimir", "DocumentPrint", S.Print, self._imprimir, "Imprimir (Ctrl+P)")
-        self.acc_anterior = self._accion("Anterior", "GoPrevious", [], self.visor.pagina_anterior, "Página anterior")
-        self.acc_siguiente = self._accion("Siguiente", "GoNext", [], self.visor.pagina_siguiente, "Página siguiente")
-        self.acc_alejar = self._accion("Alejar", "ZoomOut", S.ZoomOut, self.visor.alejar, "Alejar (Ctrl -)")
+        self.acc_anterior = self._accion("◀", None, [], self.visor.pagina_anterior, "Página anterior")
+        self.acc_siguiente = self._accion("▶", None, [], self.visor.pagina_siguiente, "Página siguiente")
+        self.acc_alejar = self._accion("−", None, S.ZoomOut, self.visor.alejar, "Alejar (Ctrl -)")
         self.acc_acercar = self._accion(
-            "Acercar", "ZoomIn", [QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")], self.visor.acercar, "Acercar (Ctrl +)"
+            "+", None, [QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")], self.visor.acercar, "Acercar (Ctrl +)"
         )
         self.acc_ancho = self._accion(
             "Ancho", "ZoomFitBest", QKeySequence("Ctrl+0"), self.visor.zoom_ajustar_ancho,
@@ -197,7 +210,7 @@ class VentanaPrincipal(QMainWindow):
         for a, teclas in ((self.acc_siguiente, ["Ctrl+Right"]), (self.acc_anterior, ["Ctrl+Left"])):
             a.setShortcuts([QKeySequence(t) for t in teclas])
         self._acciones_doc = [
-            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
+            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
             self.acc_ancho, self.acc_completa, self.acc_buscar, self.acc_cerrar,
         ]
 
@@ -212,6 +225,8 @@ class VentanaPrincipal(QMainWindow):
         barra.addAction(self.acc_abrir)
         barra.addAction(self.acc_guardar)
         barra.addAction(self.acc_imprimir)
+        barra.addSeparator()
+        barra.addAction(self.acc_ocr)
         barra.addSeparator()
         barra.addAction(self.acc_anterior)
         self.campo_pagina = QLineEdit("")
@@ -317,6 +332,7 @@ class VentanaPrincipal(QMainWindow):
         self._actualizar_estado()
         self.visor.cargar(doc)
         self._preparar_miniaturas()
+        self.aviso_escaneado.setVisible(bool(doc.paginas_sin_texto()))
         self._anadir_reciente(ruta)
         self.ajustes.setValue("ultima_carpeta", str(Path(ruta).parent))
         self.statusBar().showMessage(f"{Path(ruta).name} · {doc.num_paginas} páginas", 5000)
@@ -491,6 +507,80 @@ class VentanaPrincipal(QMainWindow):
             self._activo = (self._activo + paso) % n
         self.etiqueta_resultados.setText(f"{self._activo + 1} de {n}")
         self.visor.mostrar_resultados(self._resultados, self._activo)
+
+    # --- OCR: hacer editable ---------------------------------------------
+    def _crear_aviso_escaneado(self) -> QFrame:
+        aviso = QFrame()
+        aviso.setObjectName("avisoEscaneado")
+        lay = QHBoxLayout(aviso)
+        lay.setContentsMargins(16, 8, 12, 8)
+        texto = QLabel("Este PDF parece escaneado: su texto todavía no se puede buscar ni copiar.")
+        boton = QToolButton()
+        boton.setText("Hacer editable")
+        boton.setObjectName("botonAviso")
+        boton.clicked.connect(self.hacer_editable)
+        cerrar = QToolButton()
+        cerrar.setText("✕")
+        cerrar.setToolTip("Ocultar")
+        cerrar.setAutoRaise(True)
+        cerrar.clicked.connect(aviso.hide)
+        lay.addWidget(texto, 1)
+        lay.addWidget(boton)
+        lay.addWidget(cerrar)
+        aviso.hide()
+        return aviso
+
+    def hacer_editable(self):
+        if not self.doc:
+            return
+        paginas = elegir_paginas(self, self.doc)
+        if not paginas:
+            return
+        tessdata = asegurar_idiomas(self)
+        if not tessdata:
+            return
+
+        dialogo = QProgressDialog("Reconociendo el texto…", "Cancelar", 0, len(paginas), self)
+        dialogo.setWindowTitle("Hacer editable")
+        dialogo.setWindowModality(Qt.WindowModality.WindowModal)
+        dialogo.setMinimumDuration(0)
+        dialogo.setValue(0)
+        hilo = HiloOCR(self.doc.copia_en_memoria(), paginas, tessdata)
+        hechas = []
+        errores = []
+
+        def pagina_lista(n, palabras):
+            self.doc.aplicar_ocr(n, palabras)
+            hechas.append(n)
+            dialogo.setValue(len(hechas))
+
+        def avance(k, total):
+            dialogo.setLabelText(f"Reconociendo el texto… página {paginas[k] + 1} ({k + 1} de {total})")
+
+        hilo.paginaLista.connect(pagina_lista)
+        hilo.avance.connect(avance)
+        hilo.fallo.connect(errores.append)
+        dialogo.canceled.connect(lambda: setattr(hilo, "cancelado", True))
+        bucle = QEventLoop()
+        hilo.finished.connect(bucle.quit)
+        hilo.start()
+        bucle.exec()
+        dialogo.close()
+        self._ocr_terminado(hechas, len(paginas), errores)
+
+    def _ocr_terminado(self, hechas, total, errores):
+        self._texto_buscado = ""  # que la próxima búsqueda incluya el texto nuevo
+        self.visor.texto_actualizado()
+        self._actualizar_estado()
+        if errores:
+            QMessageBox.critical(self, "Error en el reconocimiento", f"No se pudo terminar el reconocimiento.\n\n{errores[0]}")
+        if hechas:
+            self.aviso_escaneado.setVisible(bool(self.doc.paginas_sin_texto()))
+            sin_texto = sum(1 for n in hechas if not self.doc.tiene_texto(n))
+            mensaje = f"Listo: {len(hechas)} de {total} páginas reconocidas. Ya puedes buscar y copiar el texto."
+            if sin_texto:
+                mensaje += f" ({sin_texto} sin texto legible)"
+            self.statusBar().showMessage(mensaje + " Recuerda guardar.", 15000)
 
     # --- Otros ------------------------------------------------------------
     def _imprimir(self):

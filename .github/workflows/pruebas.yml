@@ -14,7 +14,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
-      - run: python -m pytest -q
+      - name: Descargar idiomas del OCR
+        run: python -c "from pdfcasero.ocr import descargar_idiomas; print(descargar_idiomas())"
+      - run: python -m pytest -q -rs
       - name: Arranque de la ventana sin pantalla
         env:
           QT_QPA_PLATFORM: offscreen

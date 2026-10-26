@@ -29,7 +29,8 @@ class Documento:
                 self._doc.close()
                 raise ContrasenaNecesaria(str(self.ruta))
         self._contrasena = contrasena
-        self.modificado = False  # lo activarán el OCR y la edición de texto
+        self.modificado = False  # lo activan el OCR y la edición de texto
+        self._palabras: dict[int, list] = {}
 
     @property
     def num_paginas(self) -> int:
@@ -65,6 +66,38 @@ class Documento:
         """False si la página parece escaneada (sin texto), útil para el OCR."""
         return bool(self._doc[n].get_text("text").strip())
 
+    def paginas_sin_texto(self) -> list[int]:
+        return [n for n in range(self.num_paginas) if not self.tiene_texto(n)]
+
+    def palabras(self, n: int) -> list[tuple]:
+        """Palabras de la página en orden de lectura: (x0, y0, x1, y1, texto, bloque, línea, n)."""
+        if n not in self._palabras:
+            self._palabras[n] = self._doc[n].get_text("words", sort=True)
+        return self._palabras[n]
+
+    def texto_entre(self, n: int, desde: int, hasta: int) -> str:
+        """Texto de las palabras desde..hasta (incluidas), respetando saltos de línea."""
+        partes, anterior = [], None
+        for w in self.palabras(n)[desde : hasta + 1]:
+            linea = (w[5], w[6])
+            if anterior is not None:
+                partes.append(" " if linea == anterior else "\n")
+            partes.append(w[4])
+            anterior = linea
+        return "".join(partes)
+
+    def copia_en_memoria(self) -> bytes:
+        """El PDF tal como está ahora, para trabajar con él en otro hilo sin tocar este."""
+        return self._doc.tobytes()
+
+    def aplicar_ocr(self, n: int, palabras) -> None:
+        """Añade a la página n el texto reconocido por el OCR (invisible, pero buscable)."""
+        from .ocr import insertar_capa_texto
+
+        insertar_capa_texto(self._doc[n], palabras)
+        self._palabras.pop(n, None)
+        self.modificado = True
+
     def guardar(self, ruta: str | Path | None = None) -> Path:
         """Guarda en `ruta` (Guardar como) o encima del archivo actual (Guardar).
 
@@ -85,6 +118,7 @@ class Documento:
                 finally:
                     # Reabrir siempre, aunque falle el reemplazo, para no quedarnos sin documento
                     self._doc = pymupdf.open(destino)
+                    self._palabras.clear()
                     if self._doc.needs_pass:
                         self._doc.authenticate(self._contrasena or "")
             else:

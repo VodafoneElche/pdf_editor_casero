@@ -31,5 +31,10 @@ QListWidget#recientes {{
 }}
 QListWidget#recientes::item {{ padding: 6px 8px; border-radius: 6px; }}
 QListWidget#recientes::item:hover {{ background: #f3f3f6; }}
+QFrame#avisoEscaneado {{ background: #fff4d6; border-bottom: 1px solid #f0d68a; color: #5a4500; }}
+QToolButton#botonAviso {{
+    background: {ACENTO}; color: white; font-weight: 600; padding: 5px 14px; border-radius: 6px;
+}}
+QToolButton#botonAviso:hover {{ background: #a82722; }}
 QStatusBar {{ background: #ffffff; border-top: 1px solid #dddde1; color: #55555c; }}
 """

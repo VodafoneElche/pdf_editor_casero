@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
-from PySide6.QtCore import QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QWheelEvent
-from PySide6.QtWidgets import QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QColor, QGuiApplication, QImage, QKeySequence, QPainter, QWheelEvent
+from PySide6.QtWidgets import QMenu, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from .documento import Documento, Resultado
 
@@ -23,6 +23,29 @@ class PaginaWidget(QWidget):
         self.visor = visor
         self.indice = indice
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setMouseTracking(True)
+
+    def _punto_pdf(self, evento) -> QPointF:
+        return evento.position() / self.visor.escala
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self.visor.empezar_seleccion(self.indice, self._punto_pdf(e))
+
+    def mouseMoveEvent(self, e):
+        p = self._punto_pdf(e)
+        if e.buttons() & Qt.MouseButton.LeftButton:
+            self.visor.extender_seleccion(self.indice, p)
+        sobre_texto = self.visor.palabra_en(self.indice, p, exacta=True) is not None
+        self.setCursor(Qt.CursorShape.IBeamCursor if sobre_texto else Qt.CursorShape.ArrowCursor)
+
+    def mouseDoubleClickEvent(self, e):
+        i = self.visor.palabra_en(self.indice, self._punto_pdf(e), exacta=True)
+        if i is not None:
+            self.visor.fijar_seleccion(self.indice, i, i)
+
+    def contextMenuEvent(self, e):
+        self.visor.menu_contextual(e.globalPos())
 
     def paintEvent(self, _evento):
         p = QPainter(self)
@@ -31,6 +54,9 @@ class PaginaWidget(QWidget):
         if img is not None:
             p.drawImage(QRectF(self.rect()), img)
         escala = self.visor.escala
+        azul = QColor(0, 110, 230, 80)
+        for x0, y0, x1, y1 in self.visor.rects_seleccion(self.indice):
+            p.fillRect(QRectF(x0 * escala, y0 * escala, (x1 - x0) * escala, (y1 - y0) * escala), azul)
         for res, activo in self.visor.resaltados_de(self.indice):
             color = QColor(255, 140, 0, 120) if activo else QColor(255, 230, 0, 100)
             r = res.rect
@@ -52,6 +78,17 @@ class VisorPDF(QScrollArea):
         self._resultados: list[Resultado] = []
         self._activo = -1
         self._pagina_actual = 0
+        self._seleccion: tuple[int, int, int] | None = None  # página, palabra inicial, palabra final
+        self._ancla: int | None = None
+        self._ancla_pagina = -1
+
+        self.acc_copiar = QAction("Copiar", self)
+        self.acc_copiar.setShortcut(QKeySequence.StandardKey.Copy)
+        self.acc_copiar.triggered.connect(self.copiar)
+        self.acc_sel_pagina = QAction("Seleccionar todo el texto de la página", self)
+        self.acc_sel_pagina.setShortcut(QKeySequence.StandardKey.SelectAll)
+        self.acc_sel_pagina.triggered.connect(self.seleccionar_pagina)
+        self.addActions([self.acc_copiar, self.acc_sel_pagina])
 
         self.setWidgetResizable(True)
         self.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -75,6 +112,7 @@ class VisorPDF(QScrollArea):
         self._paginas.clear()
         self._cache.clear()
         self._resultados, self._activo = [], -1
+        self._seleccion = self._ancla = None
         self.doc = doc
         if doc is None:
             return
@@ -221,3 +259,74 @@ class VisorPDF(QScrollArea):
         for n, r in enumerate(self._resultados):
             if r.pagina == i:
                 yield r, n == self._activo
+
+    # --- Selección de texto -------------------------------------------------
+    def palabra_en(self, pagina: int, p: QPointF, exacta: bool = False) -> int | None:
+        """Índice de la palabra bajo el punto; si no es exacta, la más cercana."""
+        if self.doc is None:
+            return None
+        mejor, distancia = None, float("inf")
+        for k, w in enumerate(self.doc.palabras(pagina)):
+            dx = max(w[0] - p.x(), 0, p.x() - w[2])
+            dy = max(w[1] - p.y(), 0, p.y() - w[3])
+            d = dx * dx + dy * dy * 4  # pesa más estar en la misma línea
+            if d < distancia:
+                mejor, distancia = k, d
+        if exacta and distancia > 0:
+            return None
+        return mejor
+
+    def empezar_seleccion(self, pagina: int, p: QPointF):
+        self._ancla = self.palabra_en(pagina, p)
+        self._seleccion = None
+        self._ancla_pagina = pagina
+        self._repintar()
+
+    def extender_seleccion(self, pagina: int, p: QPointF):
+        if self._ancla is None or pagina != self._ancla_pagina:
+            return
+        fin = self.palabra_en(pagina, p)
+        if fin is not None:
+            self.fijar_seleccion(pagina, self._ancla, fin)
+
+    def fijar_seleccion(self, pagina: int, desde: int, hasta: int):
+        self._seleccion = (pagina, min(desde, hasta), max(desde, hasta))
+        self._repintar()
+
+    def seleccionar_pagina(self):
+        if self.doc and self.doc.palabras(self._pagina_actual):
+            self.fijar_seleccion(self._pagina_actual, 0, len(self.doc.palabras(self._pagina_actual)) - 1)
+
+    def texto_seleccionado(self) -> str:
+        if not self.doc or not self._seleccion:
+            return ""
+        return self.doc.texto_entre(*self._seleccion)
+
+    def copiar(self):
+        texto = self.texto_seleccionado()
+        if texto:
+            QGuiApplication.clipboard().setText(texto)
+
+    def rects_seleccion(self, pagina: int):
+        if not self.doc or not self._seleccion or self._seleccion[0] != pagina:
+            return []
+        _, a, b = self._seleccion
+        return [w[:4] for w in self.doc.palabras(pagina)[a : b + 1]]
+
+    def menu_contextual(self, posicion):
+        menu = QMenu(self)
+        self.acc_copiar.setEnabled(bool(self._seleccion))
+        menu.addAction(self.acc_copiar)
+        menu.addAction(self.acc_sel_pagina)
+        menu.exec(posicion)
+        self.acc_copiar.setEnabled(True)
+
+    def texto_actualizado(self):
+        """Tras el OCR: la imagen no cambia, pero sí el texto que se puede seleccionar."""
+        self._seleccion = self._ancla = None
+        for w in self._paginas:
+            w.update()
+
+    def _repintar(self):
+        for w in self._paginas:
+            w.update()

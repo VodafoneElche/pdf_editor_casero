@@ -9,7 +9,7 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | Paso | Qué incluye | Estado |
 |---|---|---|
 | 1. Visor | Abrir, guardar, miniaturas, pasar páginas, zoom, buscar, imprimir | Hecho |
-| 2. OCR | Botón "Hacer editable" con Tesseract (español e inglés) | Pendiente |
+| 2. OCR | Botón "Hacer editable" con Tesseract (español e inglés), seleccionar y copiar texto | Hecho |
 | 3. Editar texto | Corregir texto dentro del PDF y exportar a Word | Pendiente |
 | 4. Dibujo y esquemas | Flechas, globos, líneas, formas, texto y lápiz, editables después | Pendiente |
 | 5. Instalador | Un único `.exe` con todo incluido | Pendiente |
@@ -24,6 +24,12 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
    ```
 4. Haz doble clic en `lanzar.pyw`, o ejecuta `python -m pdfcasero archivo.pdf`.
 
+## Hacer editable (OCR)
+
+Cuando abres un PDF escaneado aparece un aviso amarillo con el botón **Hacer editable**. El programa reconoce el texto (en español e inglés) y lo añade como una capa invisible: la página se ve igual, pero ya puedes buscar, seleccionar y copiar el texto. Después pulsa **Guardar**.
+
+La primera vez descarga los idiomas (unos 6 MB) y los guarda en `%LOCALAPPDATA%\PDFCasero\tessdata`. No hace falta instalar Tesseract aparte: PyMuPDF ya lo incluye.
+
 ## Atajos de teclado
 
 | Acción | Teclas |
@@ -31,6 +37,8 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | Abrir | Ctrl+O |
 | Guardar / Guardar como | Ctrl+S / Ctrl+Mayús+S |
 | Imprimir | Ctrl+P |
+| Hacer editable (OCR) | Ctrl+E |
+| Copiar el texto seleccionado | Ctrl+C (Ctrl+A selecciona toda la página) |
 | Buscar | Ctrl+F, después Intro o F3 (siguiente) y Mayús+F3 (anterior) |
 | Acercar / alejar | Ctrl + / Ctrl -, o Ctrl + rueda del ratón |
 | Ajustar al ancho / página completa | Ctrl+0 / Ctrl+1 |
@@ -52,6 +60,8 @@ Estructura:
 - `pdfcasero/documento.py`: acceso al PDF (abrir, dibujar páginas, buscar). No depende de la interfaz.
 - `pdfcasero/visor.py`: vista continua de páginas con zoom; solo dibuja las páginas visibles.
 - `pdfcasero/ventana.py`: ventana principal, barra de herramientas, miniaturas y búsqueda.
+- `pdfcasero/ocr.py`: reconocimiento de texto y capa de texto invisible.
+- `pdfcasero/dialogo_ocr.py`: el OCR en segundo plano, con barra de progreso.
 - `pdfcasero/impresion.py`: impresión.
 - `pdfcasero/estilo.py`: colores y aspecto.
 

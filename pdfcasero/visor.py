@@ -6,7 +6,7 @@ from collections import OrderedDict
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QImage, QKeySequence, QPainter, QWheelEvent
-from PySide6.QtWidgets import QMenu, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLineEdit, QMenu, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from .documento import Documento, Resultado
 
@@ -15,6 +15,7 @@ PUNTOS_A_PIXELES = 96 / 72
 ZOOM_MIN, ZOOM_MAX = 0.25, 5.0
 MARGEN = 16
 MAX_CACHE = 24
+TAMANO_TEXTO_NUEVO = 12
 
 
 class PaginaWidget(QWidget):
@@ -29,17 +30,26 @@ class PaginaWidget(QWidget):
         return evento.position() / self.visor.escala
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
+        if e.button() != Qt.MouseButton.LeftButton:
+            return
+        if self.visor.modo_edicion:
+            self.visor.editar_en(self, self._punto_pdf(e))
+        else:
             self.visor.empezar_seleccion(self.indice, self._punto_pdf(e))
 
     def mouseMoveEvent(self, e):
         p = self._punto_pdf(e)
+        if self.visor.modo_edicion:
+            self.setCursor(Qt.CursorShape.IBeamCursor)
+            return
         if e.buttons() & Qt.MouseButton.LeftButton:
             self.visor.extender_seleccion(self.indice, p)
         sobre_texto = self.visor.palabra_en(self.indice, p, exacta=True) is not None
         self.setCursor(Qt.CursorShape.IBeamCursor if sobre_texto else Qt.CursorShape.ArrowCursor)
 
     def mouseDoubleClickEvent(self, e):
+        if self.visor.modo_edicion:
+            return
         i = self.visor.palabra_en(self.indice, self._punto_pdf(e), exacta=True)
         if i is not None:
             self.visor.fijar_seleccion(self.indice, i, i)
@@ -64,8 +74,51 @@ class PaginaWidget(QWidget):
         p.end()
 
 
+class EditorEnLinea(QLineEdit):
+    """Cuadro de texto que aparece encima de la página para escribir o cambiar una línea."""
+
+    FAMILIAS = {"ti": "Times New Roman", "co": "Courier New"}
+
+    def __init__(self, pagina: PaginaWidget, rect: QRectF, texto: str, tamano_px: float, al_terminar, fuente_pdf="helv"):
+        super().__init__(texto, pagina)
+        self._al_terminar = al_terminar
+        self._terminado = False
+        self.setObjectName("editorEnLinea")
+        fuente = self.font()
+        if fuente_pdf[:2] in self.FAMILIAS:
+            fuente.setFamily(self.FAMILIAS[fuente_pdf[:2]])
+        fuente.setPixelSize(max(8, round(tamano_px)))
+        self.setFont(fuente)
+        alto = max(rect.height(), tamano_px * 1.5)
+        ancho = max(rect.width() + tamano_px * 4, tamano_px * 12)
+        self.setGeometry(round(rect.x() - 3), round(rect.y() - (alto - rect.height()) / 2), round(ancho), round(alto))
+        self.selectAll()
+        self.show()
+        self.setFocus()
+
+    def _terminar(self, aceptar: bool):
+        if self._terminado:
+            return
+        self._terminado = True
+        self._al_terminar(self.text() if aceptar else None)
+        self.deleteLater()
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self._terminar(True)
+        elif e.key() == Qt.Key.Key_Escape:
+            self._terminar(False)
+        else:
+            super().keyPressEvent(e)
+
+    def focusOutEvent(self, e):
+        super().focusOutEvent(e)
+        self._terminar(True)
+
+
 class VisorPDF(QScrollArea):
     paginaCambiada = Signal(int)
+    documentoEditado = Signal()
     zoomCambiado = Signal(float)
 
     def __init__(self, parent=None):
@@ -88,7 +141,12 @@ class VisorPDF(QScrollArea):
         self.acc_sel_pagina = QAction("Seleccionar todo el texto de la página", self)
         self.acc_sel_pagina.setShortcut(QKeySequence.StandardKey.SelectAll)
         self.acc_sel_pagina.triggered.connect(self.seleccionar_pagina)
-        self.addActions([self.acc_copiar, self.acc_sel_pagina])
+        self.acc_borrar = QAction("Borrar el texto seleccionado", self)
+        self.acc_borrar.setShortcut(QKeySequence.StandardKey.Delete)
+        self.acc_borrar.triggered.connect(self.borrar_seleccion)
+        self.addActions([self.acc_copiar, self.acc_sel_pagina, self.acc_borrar])
+        self.modo_edicion = False
+        self._editor: EditorEnLinea | None = None
 
         self.setWidgetResizable(True)
         self.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -320,6 +378,57 @@ class VisorPDF(QScrollArea):
         menu.addAction(self.acc_sel_pagina)
         menu.exec(posicion)
         self.acc_copiar.setEnabled(True)
+
+    # --- Edición de texto ---------------------------------------------------
+    def set_modo_edicion(self, activo: bool):
+        self.modo_edicion = activo
+        self._seleccion = self._ancla = None
+        self._repintar()
+
+    def editar_en(self, pagina: PaginaWidget, p: QPointF):
+        """Clic en modo edición: cambiar la línea que hay debajo, o escribir texto nuevo."""
+        if self.doc is None or self._editor is not None:
+            return
+        n, escala = pagina.indice, self.escala
+        linea = self.doc.linea_en(n, p.x(), p.y())
+        if linea is not None:
+            r = linea.rect
+            rect = QRectF(r.x0 * escala, r.y0 * escala, r.width * escala, r.height * escala)
+            texto, tamano = linea.texto, linea.tamano
+            fuente_pdf = "helv" if linea.invisible else linea.fuente
+
+            def terminar(nuevo):
+                self._editor = None
+                if nuevo is not None and nuevo != texto:
+                    self.doc.cambiar_linea(n, linea, nuevo)
+                    self.documento_cambiado()
+        else:
+            tamano = TAMANO_TEXTO_NUEVO
+            fuente_pdf = "helv"
+            rect = QRectF(p.x() * escala, p.y() * escala, 0, tamano * escala * 1.2)
+            texto = ""
+
+            def terminar(nuevo):
+                self._editor = None
+                if nuevo:
+                    self.doc.escribir(n, p.x(), p.y(), nuevo, tamano)
+                    self.documento_cambiado()
+
+        self._editor = EditorEnLinea(pagina, rect, texto, tamano * escala, terminar, fuente_pdf)
+
+    def borrar_seleccion(self):
+        if self.doc is None or not self._seleccion:
+            return
+        self.doc.borrar_palabras(*self._seleccion)
+        self.documento_cambiado()
+
+    def documento_cambiado(self):
+        """El contenido de la página ha cambiado: volver a dibujar."""
+        self._cache.clear()
+        self._seleccion = self._ancla = None
+        self._resultados, self._activo = [], -1
+        self._repintar()
+        self.documentoEditado.emit()
 
     def texto_actualizado(self):
         """Tras el OCR: la imagen no cambia, pero sí el texto que se puede seleccionar."""

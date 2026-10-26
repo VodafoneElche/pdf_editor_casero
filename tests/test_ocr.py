@@ -1,7 +1,7 @@
 import pymupdf
 import pytest
 
-from pdfcasero import ocr
+from pdfcasero import edicion, ocr
 from pdfcasero.documento import Documento
 
 TESSDATA = ocr.buscar_tessdata()
@@ -79,3 +79,23 @@ def test_texto_entre_respeta_lineas(tmp_path):
     d = Documento(ruta)
     assert d.texto_entre(0, 0, 4) == "Primera línea aquí\nSegunda línea"
     assert d.texto_entre(0, 1, 3) == "línea aquí\nSegunda"
+
+
+@requiere_idiomas
+def test_editar_escaneado_tapa_la_imagen(pdf_escaneado):
+    d = Documento(pdf_escaneado)
+    copia = pymupdf.open(stream=d.copia_en_memoria(), filetype="pdf")
+    d.aplicar_ocr(0, ocr.reconocer_pagina(copia[0], TESSDATA))
+    linea = next(l for l in edicion.lineas(d._doc[0]) if "Estimado" in l.texto)
+    assert linea.invisible
+    d.cambiar_linea(0, linea, "Estimada familia: texto cambiado")
+    assert d.buscar("texto cambiado")
+    # Al volver a pasar el OCR sobre cómo se ve ahora la página, el texto viejo ya no está
+    visto = pymupdf.open(stream=d.copia_en_memoria(), filetype="pdf")[0]
+    pix = visto.get_pixmap(dpi=200)
+    solo_imagen = pymupdf.open()
+    pagina = solo_imagen.new_page(width=visto.rect.width, height=visto.rect.height)
+    pagina.insert_image(pagina.rect, pixmap=pix)
+    texto = " ".join(w[4] for w in ocr.reconocer_pagina(pagina, TESSDATA))
+    assert "cambiado" in texto
+    assert "informamos" not in texto

@@ -158,6 +158,7 @@ class VentanaPrincipal(QMainWindow):
         self._crear_barra()
         self.visor.paginaCambiada.connect(self._pagina_cambiada)
         self.visor.zoomCambiado.connect(self._zoom_cambiado)
+        self.visor.documentoEditado.connect(self._documento_editado)
         self.statusBar().showMessage("Listo")
         self.bienvenida.actualizar(self.recientes())
         self._actualizar_estado()
@@ -184,6 +185,13 @@ class VentanaPrincipal(QMainWindow):
             "Guardar como", "DocumentSaveAs", QKeySequence("Ctrl+Shift+S"), self.guardar_como,
             "Guardar una copia con otro nombre (Ctrl+Mayús+S)",
         )
+        self.acc_editar = self._accion(
+            "Editar texto", None, QKeySequence("Ctrl+T"), self._cambiar_modo_edicion,
+            "Cambiar, borrar o escribir texto (Ctrl+T)",
+        )
+        self.acc_editar.setCheckable(True)
+        self.acc_deshacer = self._accion("↶", None, S.Undo, self.deshacer, "Deshacer (Ctrl+Z)")
+        self.acc_rehacer = self._accion("↷", None, [QKeySequence("Ctrl+Y"), QKeySequence("Ctrl+Shift+Z")], self.rehacer, "Rehacer (Ctrl+Y)")
         self.acc_ocr = self._accion(
             "Hacer editable", None, QKeySequence("Ctrl+E"), self.hacer_editable,
             "Reconocer el texto de un PDF escaneado para poder buscarlo y copiarlo (Ctrl+E)",
@@ -196,11 +204,11 @@ class VentanaPrincipal(QMainWindow):
             "+", None, [QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")], self.visor.acercar, "Acercar (Ctrl +)"
         )
         self.acc_ancho = self._accion(
-            "Ancho", "ZoomFitBest", QKeySequence("Ctrl+0"), self.visor.zoom_ajustar_ancho,
+            "Ajustar al ancho", "ZoomFitBest", QKeySequence("Ctrl+0"), self.visor.zoom_ajustar_ancho,
             "Ajustar al ancho de la ventana (Ctrl+0)",
         )
         self.acc_completa = self._accion(
-            "Página", "ZoomFitBest", QKeySequence("Ctrl+1"), self.visor.zoom_pagina_completa,
+            "Ver página completa", "ZoomFitBest", QKeySequence("Ctrl+1"), self.visor.zoom_pagina_completa,
             "Ver la página completa (Ctrl+1)",
         )
         self.acc_buscar = self._accion("Buscar", "EditFind", S.Find, self._enfocar_busqueda, "Buscar (Ctrl+F)")
@@ -210,7 +218,7 @@ class VentanaPrincipal(QMainWindow):
         for a, teclas in ((self.acc_siguiente, ["Ctrl+Right"]), (self.acc_anterior, ["Ctrl+Left"])):
             a.setShortcuts([QKeySequence(t) for t in teclas])
         self._acciones_doc = [
-            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
+            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
             self.acc_ancho, self.acc_completa, self.acc_buscar, self.acc_cerrar,
         ]
 
@@ -227,6 +235,9 @@ class VentanaPrincipal(QMainWindow):
         barra.addAction(self.acc_imprimir)
         barra.addSeparator()
         barra.addAction(self.acc_ocr)
+        barra.addAction(self.acc_editar)
+        barra.addAction(self.acc_deshacer)
+        barra.addAction(self.acc_rehacer)
         barra.addSeparator()
         barra.addAction(self.acc_anterior)
         self.campo_pagina = QLineEdit("")
@@ -245,8 +256,6 @@ class VentanaPrincipal(QMainWindow):
         self.etiqueta_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
         barra.addWidget(self.etiqueta_zoom)
         barra.addAction(self.acc_acercar)
-        barra.addAction(self.acc_ancho)
-        barra.addAction(self.acc_completa)
 
         espacio = QWidget()
         espacio.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -256,7 +265,7 @@ class VentanaPrincipal(QMainWindow):
         self.campo_buscar.setPlaceholderText("Buscar en el documento…")
         self.campo_buscar.setClearButtonEnabled(True)
         self.campo_buscar.setMinimumWidth(160)
-        self.campo_buscar.setMaximumWidth(240)
+        self.campo_buscar.setMaximumWidth(220)
         self.campo_buscar.returnPressed.connect(self._buscar_siguiente)
         self.campo_buscar.textChanged.connect(self._texto_busqueda_cambiado)
         barra.addWidget(self.campo_buscar)
@@ -271,7 +280,7 @@ class VentanaPrincipal(QMainWindow):
         barra.addSeparator()
         # Lo que se usa menos va en un menú para que la barra quepa en pantallas pequeñas
         menu = QMenu(self)
-        for a in (self.acc_guardar_como, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
+        for a in (self.acc_guardar_como, self.acc_ancho, self.acc_completa, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
             menu.addAction(a)
         boton_mas = QToolButton()
         boton_mas.setText("Más")
@@ -290,9 +299,16 @@ class VentanaPrincipal(QMainWindow):
         if hay:
             self.campo_pagina.setValidator(QIntValidator(1, self.doc.num_paginas, self))
             self.etiqueta_total.setText(f" de {self.doc.num_paginas} ")
+            self.acc_deshacer.setEnabled(self.doc.puede_deshacer)
+            self.acc_rehacer.setEnabled(self.doc.puede_rehacer)
             marca = "● " if self.doc.modificado else ""
             self.setWindowTitle(f"{marca}{self.doc.titulo} – PDF Casero")
         else:
+            self.acc_deshacer.setEnabled(False)
+            self.acc_rehacer.setEnabled(False)
+            if self.acc_editar.isChecked():
+                self.acc_editar.setChecked(False)
+                self._cambiar_modo_edicion(False)
             self.etiqueta_total.setText(" de 0 ")
             self.campo_pagina.setText("")
             self.setWindowTitle("PDF Casero")
@@ -508,6 +524,39 @@ class VentanaPrincipal(QMainWindow):
         self.etiqueta_resultados.setText(f"{self._activo + 1} de {n}")
         self.visor.mostrar_resultados(self._resultados, self._activo)
 
+    # --- Editar texto ----------------------------------------------------
+    def _cambiar_modo_edicion(self, activo: bool):
+        self.visor.set_modo_edicion(activo)
+        if activo:
+            self.statusBar().showMessage(
+                "Editar texto: haz clic en una línea para cambiarla (déjala vacía para borrarla) o en un hueco para "
+                "escribir. Intro acepta, Esc cancela."
+            )
+        else:
+            self.statusBar().clearMessage()
+
+    def _documento_editado(self):
+        self._texto_buscado = ""
+        self._resultados, self._activo = [], -1
+        self.etiqueta_resultados.setText("")
+        self._actualizar_estado()
+        self._regenerar_miniatura()
+
+    def _regenerar_miniatura(self, n=None):
+        paginas = range(self.doc.num_paginas) if n is None else [n]
+        for i in paginas:
+            if i not in self._cola_miniaturas:
+                self._cola_miniaturas.insert(0, i)
+        self._temporizador_mini.start()
+
+    def deshacer(self):
+        if self.doc and self.doc.deshacer():
+            self.visor.documento_cambiado()
+
+    def rehacer(self):
+        if self.doc and self.doc.rehacer():
+            self.visor.documento_cambiado()
+
     # --- OCR: hacer editable ---------------------------------------------
     def _crear_aviso_escaneado(self) -> QFrame:
         aviso = QFrame()
@@ -545,6 +594,7 @@ class VentanaPrincipal(QMainWindow):
         dialogo.setWindowModality(Qt.WindowModality.WindowModal)
         dialogo.setMinimumDuration(0)
         dialogo.setValue(0)
+        self.doc.punto_de_deshacer()  # para poder deshacer el OCR entero de una vez
         hilo = HiloOCR(self.doc.copia_en_memoria(), paginas, tessdata)
         hechas = []
         errores = []

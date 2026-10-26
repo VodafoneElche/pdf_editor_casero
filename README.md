@@ -10,9 +10,10 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 |---|---|---|
 | 1. Visor | Abrir, guardar, miniaturas, pasar páginas, zoom, buscar, imprimir | Hecho |
 | 2. OCR | Botón "Hacer editable" con Tesseract (español e inglés), seleccionar y copiar texto | Hecho |
-| 3. Editar texto | Corregir texto dentro del PDF y exportar a Word | Pendiente |
+| 3. Editar texto | Cambiar, borrar y escribir texto dentro del PDF, con deshacer | Hecho |
 | 4. Dibujo y esquemas | Flechas, globos, líneas, formas, texto y lápiz, editables después | Pendiente |
-| 5. Instalador | Un único `.exe` con todo incluido | Pendiente |
+| 5. Formularios | Crear casillas rellenables y rellenar formularios recibidos | Pendiente |
+| 6. Instalador | Un único `.exe` con todo incluido | Pendiente |
 
 ## Probarlo ahora (antes de tener el instalador)
 
@@ -30,6 +31,20 @@ Cuando abres un PDF escaneado aparece un aviso amarillo con el botón **Hacer ed
 
 La primera vez descarga los idiomas (unos 6 MB) y los guarda en `%LOCALAPPDATA%\PDFCasero\tessdata`. No hace falta instalar Tesseract aparte: PyMuPDF ya lo incluye.
 
+## Editar texto
+
+Pulsa **Editar texto** (Ctrl+T) y:
+
+- **Cambiar una línea:** haz clic sobre ella, escribe y pulsa Intro. Se mantiene el tamaño, el color y un tipo de letra parecido.
+- **Borrar una línea:** haz clic, borra todo y pulsa Intro.
+- **Escribir texto nuevo:** haz clic en un hueco, escribe y pulsa Intro.
+- **Borrar palabras sueltas:** sin el modo de edición, selecciónalas con el ratón y pulsa Supr.
+- **Deshacer / rehacer:** ↶ ↷ o Ctrl+Z / Ctrl+Y.
+
+Funciona también en PDF escaneados después de "Hacer editable": la línea original se tapa con el color del papel y se escribe encima con el color de la tinta.
+
+Los PDF guardan letras sueltas, no párrafos, por eso se edita línea a línea y el texto no se recoloca solo si la línea nueva es más larga.
+
 ## Atajos de teclado
 
 | Acción | Teclas |
@@ -38,10 +53,13 @@ La primera vez descarga los idiomas (unos 6 MB) y los guarda en `%LOCALAPPDATA%\
 | Guardar / Guardar como | Ctrl+S / Ctrl+Mayús+S |
 | Imprimir | Ctrl+P |
 | Hacer editable (OCR) | Ctrl+E |
+| Editar texto | Ctrl+T |
+| Deshacer / rehacer | Ctrl+Z / Ctrl+Y |
+| Borrar el texto seleccionado | Supr |
 | Copiar el texto seleccionado | Ctrl+C (Ctrl+A selecciona toda la página) |
 | Buscar | Ctrl+F, después Intro o F3 (siguiente) y Mayús+F3 (anterior) |
 | Acercar / alejar | Ctrl + / Ctrl -, o Ctrl + rueda del ratón |
-| Ajustar al ancho / página completa | Ctrl+0 / Ctrl+1 |
+| Ajustar al ancho / página completa (también en "Más") | Ctrl+0 / Ctrl+1 |
 | Página siguiente / anterior | Ctrl+→ / Ctrl+←, o Av Pág / Re Pág |
 | Pantalla completa | F11 |
 | Cerrar PDF | Ctrl+W |
@@ -62,6 +80,7 @@ Estructura:
 - `pdfcasero/ventana.py`: ventana principal, barra de herramientas, miniaturas y búsqueda.
 - `pdfcasero/ocr.py`: reconocimiento de texto y capa de texto invisible.
 - `pdfcasero/dialogo_ocr.py`: el OCR en segundo plano, con barra de progreso.
+- `pdfcasero/edicion.py`: cambiar, borrar y escribir texto en la página.
 - `pdfcasero/impresion.py`: impresión.
 - `pdfcasero/estilo.py`: colores y aspecto.
 

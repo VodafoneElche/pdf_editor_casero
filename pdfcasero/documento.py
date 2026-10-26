@@ -9,6 +9,10 @@ from pathlib import Path
 
 import pymupdf
 
+from . import edicion
+
+MAX_DESHACER = 30
+
 
 class ContrasenaNecesaria(Exception):
     """El PDF está protegido y hace falta una contraseña."""
@@ -31,6 +35,8 @@ class Documento:
         self._contrasena = contrasena
         self.modificado = False  # lo activan el OCR y la edición de texto
         self._palabras: dict[int, list] = {}
+        self._deshacer: list[bytes] = []
+        self._rehacer: list[bytes] = []
 
     @property
     def num_paginas(self) -> int:
@@ -97,6 +103,73 @@ class Documento:
         insertar_capa_texto(self._doc[n], palabras)
         self._palabras.pop(n, None)
         self.modificado = True
+
+    # --- Edición ------------------------------------------------------------
+    def _antes_de_cambiar(self) -> None:
+        self._deshacer.append(self._doc.tobytes())
+        del self._deshacer[:-MAX_DESHACER]
+        self._rehacer.clear()
+
+    def _despues_de_cambiar(self, n: int | None = None) -> None:
+        if n is None:
+            self._palabras.clear()
+        else:
+            self._palabras.pop(n, None)
+        self.modificado = True
+
+    def punto_de_deshacer(self) -> None:
+        """Guarda el estado actual para poder volver a él con Deshacer (p. ej. antes del OCR)."""
+        self._antes_de_cambiar()
+
+    def linea_en(self, n: int, x: float, y: float):
+        return edicion.linea_en(self._doc[n], pymupdf.Point(x, y))
+
+    def cambiar_linea(self, n: int, linea, texto_nuevo: str) -> None:
+        self._antes_de_cambiar()
+        edicion.reemplazar_linea(self._doc[n], linea, texto_nuevo)
+        self._despues_de_cambiar(n)
+
+    def borrar_palabras(self, n: int, desde: int, hasta: int) -> None:
+        palabras = self.palabras(n)[desde : hasta + 1]
+        if not palabras:
+            return
+        rects = [pymupdf.Rect(w[:4]) for w in palabras]
+        invisible = any(l.invisible for l in edicion.lineas(self._doc[n]) if l.rect.intersects(rects[0]))
+        self._antes_de_cambiar()
+        edicion.borrar_zonas(self._doc[n], rects, invisible)
+        self._despues_de_cambiar(n)
+
+    def escribir(self, n: int, x: float, y: float, texto: str, tamano: float = edicion.TAMANO_POR_DEFECTO) -> None:
+        if not texto.strip():
+            return
+        self._antes_de_cambiar()
+        edicion.escribir(self._doc[n], pymupdf.Point(x, y), texto, tamano)
+        self._despues_de_cambiar(n)
+
+    @property
+    def puede_deshacer(self) -> bool:
+        return bool(self._deshacer)
+
+    @property
+    def puede_rehacer(self) -> bool:
+        return bool(self._rehacer)
+
+    def deshacer(self) -> bool:
+        return self._cambiar_estado(self._deshacer, self._rehacer)
+
+    def rehacer(self) -> bool:
+        return self._cambiar_estado(self._rehacer, self._deshacer)
+
+    def _cambiar_estado(self, origen: list, destino: list) -> bool:
+        if not origen:
+            return False
+        destino.append(self._doc.tobytes())
+        self._doc.close()
+        self._doc = pymupdf.open(stream=origen.pop(), filetype="pdf")
+        if self._doc.needs_pass:
+            self._doc.authenticate(self._contrasena or "")
+        self._despues_de_cambiar()
+        return True
 
     def guardar(self, ruta: str | Path | None = None) -> Path:
         """Guarda en `ruta` (Guardar como) o encima del archivo actual (Guardar).

@@ -36,5 +36,9 @@ QToolButton#botonAviso {{
     background: {ACENTO}; color: white; font-weight: 600; padding: 5px 14px; border-radius: 6px;
 }}
 QToolButton#botonAviso:hover {{ background: #a82722; }}
+QLineEdit#editorEnLinea {{
+    border: 2px solid {ACENTO}; border-radius: 3px; padding: 0 2px; background: #ffffff; color: #111111;
+}}
+QToolBar QToolButton:checked {{ background: #f6d9d7; color: {ACENTO}; }}
 QStatusBar {{ background: #ffffff; border-top: 1px solid #dddde1; color: #55555c; }}
 """

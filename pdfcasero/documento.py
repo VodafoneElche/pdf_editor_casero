@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pymupdf
 
-from . import dibujo, edicion
+from . import dibujo, edicion, formularios
 
 MAX_DESHACER = 30
 
@@ -218,6 +218,44 @@ class Documento:
         pagina = self._doc[n]
         pagina.set_rotation((pagina.rotation + grados) % 360)
         self._despues_de_cambiar()
+
+    # --- Formularios ---------------------------------------------------------
+    def campos(self, n: int):
+        return formularios.campos(self._doc[n])
+
+    def campo_en(self, n: int, x: float, y: float):
+        return formularios.campo_en(self._doc[n], x, y)
+
+    def crear_campo(self, n: int, tipo: str, rect) -> int:
+        nombre = formularios.nombre_libre(self._doc, tipo)
+        self._antes_de_cambiar()
+        xref = formularios.crear(self._doc[n], tipo, pymupdf.Rect(rect), nombre)
+        self._despues_de_cambiar(n)
+        return xref
+
+    def mover_campo(self, n: int, xref: int, rect) -> None:
+        self._antes_de_cambiar()
+        formularios.mover(self._doc[n], xref, pymupdf.Rect(rect))
+        self._despues_de_cambiar(n)
+
+    def renombrar_campo(self, n: int, xref: int, nombre: str) -> None:
+        nombre = nombre.strip()
+        otros = {c.nombre for p in range(self.num_paginas) for c in self.campos(p) if c.xref != xref}
+        if not nombre or nombre in otros:
+            raise ValueError(f"Ya hay otro campo que se llama «{nombre}»" if nombre else "El nombre no puede estar vacío")
+        self._antes_de_cambiar()
+        formularios.renombrar(self._doc[n], xref, nombre)
+        self._despues_de_cambiar(n)
+
+    def rellenar_campo(self, n: int, xref: int, valor) -> None:
+        self._antes_de_cambiar()
+        formularios.poner_valor(self._doc[n], xref, valor)
+        self._despues_de_cambiar(n)
+
+    def borrar_campo(self, n: int, xref: int) -> None:
+        self._antes_de_cambiar()
+        formularios.borrar(self._doc[n], xref)
+        self._despues_de_cambiar(n)
 
     # --- Dibujos ------------------------------------------------------------
     def dibujo_en(self, n: int, x: float, y: float):

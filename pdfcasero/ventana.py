@@ -212,6 +212,7 @@ class VentanaPrincipal(QMainWindow):
         self._crear_acciones()
         self._crear_barra()
         self._crear_barra_dibujo()
+        self._crear_barra_formulario()
         self.visor.paginaCambiada.connect(self._pagina_cambiada)
         self.visor.zoomCambiado.connect(self._zoom_cambiado)
         self.visor.documentoEditado.connect(self._documento_editado)
@@ -251,6 +252,11 @@ class VentanaPrincipal(QMainWindow):
             "Flechas, líneas, formas, globos, texto y lápiz (Ctrl+D)",
         )
         self.acc_dibujar.setCheckable(True)
+        self.acc_formulario = self._accion(
+            "Formulario", None, QKeySequence("Ctrl+Shift+F"), self._cambiar_modo_formulario,
+            "Crear casillas y zonas rellenables para quien reciba el PDF (Ctrl+Mayús+F)",
+        )
+        self.acc_formulario.setCheckable(True)
         self.acc_deshacer = self._accion("↶", None, S.Undo, self.deshacer, "Deshacer (Ctrl+Z)")
         self.acc_rehacer = self._accion("↷", None, [QKeySequence("Ctrl+Y"), QKeySequence("Ctrl+Shift+Z")], self.rehacer, "Rehacer (Ctrl+Y)")
         self.acc_ocr = self._accion(
@@ -279,7 +285,7 @@ class VentanaPrincipal(QMainWindow):
         for a, teclas in ((self.acc_siguiente, ["Ctrl+Right"]), (self.acc_anterior, ["Ctrl+Left"])):
             a.setShortcuts([QKeySequence(t) for t in teclas])
         self._acciones_doc = [
-            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
+            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_formulario, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
             self.acc_ancho, self.acc_completa, self.acc_buscar, self.acc_cerrar,
         ]
 
@@ -297,6 +303,7 @@ class VentanaPrincipal(QMainWindow):
         barra.addAction(self.acc_ocr)
         barra.addAction(self.acc_editar)
         barra.addAction(self.acc_dibujar)
+        barra.addAction(self.acc_formulario)
         barra.addAction(self.acc_deshacer)
         barra.addAction(self.acc_rehacer)
         barra.addSeparator()
@@ -325,7 +332,7 @@ class VentanaPrincipal(QMainWindow):
         self.campo_buscar = QLineEdit()
         self.campo_buscar.setPlaceholderText("Buscar en el documento…")
         self.campo_buscar.setClearButtonEnabled(True)
-        self.campo_buscar.setMinimumWidth(160)
+        self.campo_buscar.setMinimumWidth(120)
         self.campo_buscar.setMaximumWidth(220)
         self.campo_buscar.returnPressed.connect(self._buscar_siguiente)
         self.campo_buscar.textChanged.connect(self._texto_busqueda_cambiado)
@@ -371,7 +378,7 @@ class VentanaPrincipal(QMainWindow):
         else:
             self.acc_deshacer.setEnabled(False)
             self.acc_rehacer.setEnabled(False)
-            for accion in (self.acc_editar, self.acc_dibujar):
+            for accion in (self.acc_editar, self.acc_dibujar, self.acc_formulario):
                 if accion.isChecked():
                     accion.setChecked(False)
             self._poner_modo("leer")
@@ -592,23 +599,34 @@ class VentanaPrincipal(QMainWindow):
 
     # --- Editar texto ----------------------------------------------------
     def _cambiar_modo_edicion(self, activo: bool):
-        if activo:
-            self.acc_dibujar.setChecked(False)
-        self._poner_modo("editar" if activo else "leer")
+        self._cambiar_modo("editar", activo)
 
     def _cambiar_modo_dibujo(self, activo: bool):
+        self._cambiar_modo("dibujar", activo)
+
+    def _cambiar_modo_formulario(self, activo: bool):
+        self._cambiar_modo("formulario", activo)
+
+    def _cambiar_modo(self, modo: str, activo: bool):
+        """Solo un modo a la vez: al activar uno se desmarcan los otros."""
+        botones = {"editar": self.acc_editar, "dibujar": self.acc_dibujar, "formulario": self.acc_formulario}
         if activo:
-            self.acc_editar.setChecked(False)
-        self._poner_modo("dibujar" if activo else "leer")
+            for clave, accion in botones.items():
+                if clave != modo:
+                    accion.setChecked(False)
+        self._poner_modo(modo if activo else "leer")
 
     def _poner_modo(self, modo: str):
         self.visor.set_modo(modo)
         self.barra_dibujo.setVisible(modo == "dibujar")
+        self.barra_formulario.setVisible(modo == "formulario")
         mensajes = {
             "editar": "Editar texto: haz clic en una línea para cambiarla (déjala vacía para borrarla) o en un hueco "
             "para escribir. Intro acepta, Esc cancela.",
             "dibujar": "Dibujar: elige herramienta y arrastra. Con Seleccionar mueves, estiras (cuadraditos), "
             "cambias color o borras (Supr). Doble clic cambia el texto de un globo.",
+            "formulario": "Formulario: elige el tipo de campo y arrastra donde irá. Con Seleccionar lo mueves o "
+            "estiras (cuadradito), doble clic le cambia el nombre, Supr lo borra.",
         }
         if modo in mensajes:
             self.statusBar().showMessage(mensajes[modo])
@@ -711,6 +729,61 @@ class VentanaPrincipal(QMainWindow):
         indice = min(range(len(self.GROSORES)), key=lambda i: abs(self.GROSORES[i][1] - d.grosor))
         self.combo_grosor.setCurrentIndex(indice)
         self.acc_relleno.setChecked(d.relleno)
+
+    # --- Barra de formulario -----------------------------------------------
+    HERRAMIENTAS_FORMULARIO = (
+        ("seleccionar", "Seleccionar", "Seleccionar, mover y estirar campos"),
+        ("texto", "Campo de texto", "Arrastra para crear una zona de una línea (nombre, fecha…)"),
+        ("multilinea", "Texto largo", "Arrastra para crear una zona de varias líneas (observaciones…)"),
+        ("casilla", "Casilla", "Haz clic donde irá una casilla para marcar ✓"),
+    )
+
+    def _crear_barra_formulario(self):
+        barra = QToolBar("Formulario")
+        barra.setObjectName("barraDibujo")
+        barra.setMovable(False)
+        self.addToolBar(barra)
+        control = self.visor.formulario
+        grupo = QActionGroup(self)
+        self._herramientas_formulario = {}
+        for clave, texto, consejo in self.HERRAMIENTAS_FORMULARIO:
+            a = QAction(texto, self, checkable=True)
+            a.setToolTip(consejo)
+            a.triggered.connect(lambda _=False, c=clave: self._elegir_herramienta_formulario(c))
+            grupo.addAction(a)
+            barra.addAction(a)
+            self._herramientas_formulario[clave] = a
+        self._herramientas_formulario["seleccionar"].setChecked(True)
+        barra.addSeparator()
+        self.acc_renombrar_campo = QAction("Cambiar nombre", self)
+        self.acc_renombrar_campo.setToolTip("Cambiar el nombre del campo seleccionado (o doble clic)")
+        self.acc_renombrar_campo.triggered.connect(
+            lambda: control.seleccion and self.visor.pedir_nombre_campo(*control.seleccion)
+        )
+        barra.addAction(self.acc_renombrar_campo)
+        self.acc_borrar_campo = QAction("Borrar campo", self)
+        self.acc_borrar_campo.setToolTip("Borrar el campo seleccionado (Supr)")
+        self.acc_borrar_campo.triggered.connect(control.borrar_seleccion)
+        barra.addAction(self.acc_borrar_campo)
+        barra.addSeparator()
+        aviso = QLabel("  Para rellenar, sal de este modo y haz clic en las casillas.")
+        aviso.setStyleSheet("color: #6b6b73;")
+        barra.addWidget(aviso)
+        control.al_cambiar_seleccion = self._campo_seleccionado
+        self._campo_seleccionado(None)
+        barra.hide()
+        self.barra_formulario = barra
+
+    def _elegir_herramienta_formulario(self, clave):
+        self.visor.formulario.herramienta = clave
+        if clave != "seleccionar":
+            self.visor.formulario.seleccionar(None)
+
+    def _campo_seleccionado(self, campo):
+        self.acc_borrar_campo.setEnabled(campo is not None)
+        self.acc_renombrar_campo.setEnabled(campo is not None)
+        if campo is not None:
+            self.statusBar().showMessage(f"Campo «{campo.nombre}»")
 
     def _documento_editado(self):
         self._texto_buscado = ""

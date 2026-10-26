@@ -13,7 +13,7 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | 3. Editar texto | Cambiar, borrar y escribir texto dentro del PDF, con deshacer | Hecho |
 | 4. Dibujo y esquemas | Flechas, globos, líneas, formas, texto y lápiz, editables después | Hecho |
 | 5. Organizar páginas | Añadir (en blanco, de otro PDF o una imagen), quitar, girar, duplicar y reordenar arrastrando | Hecho |
-| 6. Formularios | Crear casillas rellenables y rellenar formularios recibidos | Pendiente |
+| 6. Formularios | Crear casillas rellenables y rellenar formularios recibidos | Hecho |
 | 7. Instalador | Un único `.exe` con todo incluido | Pendiente |
 
 ## Probarlo ahora (antes de tener el instalador)
@@ -72,6 +72,19 @@ En la columna de miniaturas:
 
 Todo se puede deshacer con Ctrl+Z.
 
+## Formularios rellenables
+
+**Crear un formulario** (para que quien lo reciba escriba en las casillas): pulsa **Formulario** y elige en la segunda barra:
+
+- **Campo de texto:** arrastra donde irá una respuesta corta (nombre, fecha…). Un clic sin arrastrar crea uno de tamaño normal.
+- **Texto largo:** arrastra una zona de varias líneas (observaciones…).
+- **Casilla:** haz clic donde irá una casilla para marcar ✓.
+- **Seleccionar:** mueve un campo arrastrándolo, cambia su tamaño con el cuadradito de la esquina, doble clic para cambiarle el nombre y Supr para borrarlo.
+
+Son campos de formulario PDF estándar: quien reciba el PDF los puede rellenar con Adobe Reader, Edge, Chrome o el móvil.
+
+**Rellenar un formulario** (uno recibido o uno propio): fuera de los modos de edición, haz clic en un campo de texto para escribir (Intro acepta) o en una casilla para marcarla o desmarcarla. Después guarda.
+
 ## Atajos de teclado
 
 | Acción | Teclas |
@@ -82,6 +95,7 @@ Todo se puede deshacer con Ctrl+Z.
 | Hacer editable (OCR) | Ctrl+E |
 | Editar texto | Ctrl+T |
 | Dibujar | Ctrl+D |
+| Formulario (crear campos) | Ctrl+Mayús+F |
 | Deshacer / rehacer | Ctrl+Z / Ctrl+Y |
 | Borrar el texto seleccionado | Supr |
 | Copiar el texto seleccionado | Ctrl+C (Ctrl+A selecciona toda la página) |

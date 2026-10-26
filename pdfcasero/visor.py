@@ -6,10 +6,11 @@ from collections import OrderedDict
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QImage, QKeySequence, QPainter, QWheelEvent
-from PySide6.QtWidgets import QLineEdit, QMenu, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QInputDialog, QLineEdit, QMenu, QMessageBox, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from .documento import Documento, Resultado
 from .herramientas_dibujo import ControladorDibujo
+from .herramientas_formulario import ControladorFormulario
 
 # 100 % de zoom = tamaño real en una pantalla de 96 ppp
 PUNTOS_A_PIXELES = 96 / 72
@@ -38,18 +39,28 @@ class PaginaWidget(QWidget):
     def _dibujando(self) -> bool:
         return self.visor.modo == "dibujar"
 
+    @property
+    def _formulario(self) -> bool:
+        return self.visor.modo == "formulario"
+
     def mouseReleaseEvent(self, e):
-        if self._dibujando and e.button() == Qt.MouseButton.LeftButton:
+        if e.button() != Qt.MouseButton.LeftButton:
+            return
+        if self._dibujando:
             self.visor.dibujo.soltar(self.indice, self._tupla(e))
+        elif self._formulario:
+            self.visor.formulario.soltar(self.indice, self._tupla(e))
 
     def mousePressEvent(self, e):
         if e.button() != Qt.MouseButton.LeftButton:
             return
         if self._dibujando:
             self.visor.dibujo.pulsar(self.indice, self._tupla(e))
+        elif self._formulario:
+            self.visor.formulario.pulsar(self.indice, self._tupla(e))
         elif self.visor.modo_edicion:
             self.visor.editar_en(self, self._punto_pdf(e))
-        else:
+        elif not self.visor.rellenar_en(self, self._tupla(e)):
             self.visor.empezar_seleccion(self.indice, self._punto_pdf(e))
 
     def mouseMoveEvent(self, e):
@@ -61,17 +72,32 @@ class PaginaWidget(QWidget):
             if e.buttons() & Qt.MouseButton.LeftButton:
                 self.visor.dibujo.arrastrar(self.indice, self._tupla(e))
             return
+        if self._formulario:
+            self.setCursor(
+                Qt.CursorShape.ArrowCursor
+                if self.visor.formulario.herramienta == "seleccionar"
+                else Qt.CursorShape.CrossCursor
+            )
+            if e.buttons() & Qt.MouseButton.LeftButton:
+                self.visor.formulario.arrastrar(self.indice, self._tupla(e))
+            return
         if self.visor.modo_edicion:
             self.setCursor(Qt.CursorShape.IBeamCursor)
             return
         if e.buttons() & Qt.MouseButton.LeftButton:
             self.visor.extender_seleccion(self.indice, p)
+        elif self.visor.doc is not None and self.visor.doc.campo_en(self.indice, p.x(), p.y()) is not None:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            return
         sobre_texto = self.visor.palabra_en(self.indice, p, exacta=True) is not None
         self.setCursor(Qt.CursorShape.IBeamCursor if sobre_texto else Qt.CursorShape.ArrowCursor)
 
     def mouseDoubleClickEvent(self, e):
         if self._dibujando:
             self.visor.dibujo.doble_clic(self.indice, self._tupla(e))
+            return
+        if self._formulario:
+            self.visor.formulario.doble_clic(self.indice, self._tupla(e))
             return
         if self.visor.modo_edicion:
             return
@@ -99,6 +125,9 @@ class PaginaWidget(QWidget):
         if self._dibujando:
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
             self.visor.dibujo.pintar(p, self.indice, escala)
+        elif self._formulario:
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            self.visor.formulario.pintar(p, self.indice, escala)
         p.end()
 
 
@@ -175,6 +204,7 @@ class VisorPDF(QScrollArea):
         self.addActions([self.acc_copiar, self.acc_sel_pagina, self.acc_borrar])
         self.modo = "leer"
         self.dibujo = ControladorDibujo(self)
+        self.formulario = ControladorFormulario(self)
         self._editor: EditorEnLinea | None = None
 
         self.setWidgetResizable(True)
@@ -201,6 +231,7 @@ class VisorPDF(QScrollArea):
         self._resultados, self._activo = [], -1
         self._seleccion = self._ancla = None
         self.dibujo.cancelar()
+        self.formulario.cancelar()
         self.doc = doc
         if doc is None:
             return
@@ -415,10 +446,11 @@ class VisorPDF(QScrollArea):
         return self.modo == "editar"
 
     def set_modo(self, modo: str):
-        """'leer' (seleccionar texto), 'editar' (texto) o 'dibujar'."""
+        """'leer' (seleccionar texto y rellenar campos), 'editar' (texto), 'dibujar' o 'formulario'."""
         self.modo = modo
         self._seleccion = self._ancla = None
         self.dibujo.cancelar()
+        self.formulario.cancelar()
         self._repintar()
 
     def set_modo_edicion(self, activo: bool):
@@ -469,9 +501,53 @@ class VisorPDF(QScrollArea):
 
         self._editor = EditorEnLinea(pagina, rect, texto, tamano * escala, terminar, fuente_pdf)
 
+    # --- Formularios --------------------------------------------------------
+    def rellenar_en(self, pagina: PaginaWidget, p) -> bool:
+        """Clic en modo lectura sobre un campo: rellenarlo. Devuelve True si había campo."""
+        if self.doc is None or self._editor is not None:
+            return False
+        n = pagina.indice
+        campo = self.doc.campo_en(n, *p)
+        if campo is None or campo.tipo == "otro":
+            return False
+        if campo.tipo == "casilla":
+            self.doc.rellenar_campo(n, campo.xref, not campo.marcado)
+            self.documento_cambiado()
+            return True
+        if campo.tipo == "multilinea":
+            texto, ok = QInputDialog.getMultiLineText(self, campo.nombre, "Escribe el texto:", str(campo.valor))
+            if ok and texto != campo.valor:
+                self.doc.rellenar_campo(n, campo.xref, texto)
+                self.documento_cambiado()
+            return True
+        escala, r = self.escala, campo.rect
+        rect = QRectF(r.x0 * escala, r.y0 * escala, r.width * escala, r.height * escala)
+        tamano = min(11, r.height * 0.7)
+
+        def terminar(nuevo):
+            self._editor = None
+            if nuevo is not None and nuevo != campo.valor:
+                self.doc.rellenar_campo(n, campo.xref, nuevo)
+                self.documento_cambiado()
+
+        self._editor = EditorEnLinea(pagina, rect, str(campo.valor), tamano * escala, terminar)
+        return True
+
+    def pedir_nombre_campo(self, n, campo):
+        nombre, ok = QInputDialog.getText(self, "Nombre del campo", "Nombre:", text=campo.nombre)
+        if not ok or nombre.strip() == campo.nombre:
+            return
+        try:
+            self.formulario.renombrar(n, campo, nombre.strip())
+        except ValueError as error:
+            QMessageBox.warning(self, "Nombre del campo", str(error))
+
     def borrar_seleccion(self):
         if self.modo == "dibujar":
             self.dibujo.borrar_seleccion()
+            return
+        if self.modo == "formulario":
+            self.formulario.borrar_seleccion()
             return
         if self.doc is None or not self._seleccion:
             return
@@ -482,6 +558,7 @@ class VisorPDF(QScrollArea):
         """El contenido de la página ha cambiado: volver a dibujar."""
         if not conservar_dibujo:
             self.dibujo.cancelar()
+            self.formulario.cancelar()
         self._cache.clear()
         self._seleccion = self._ancla = None
         self._resultados, self._activo = [], -1

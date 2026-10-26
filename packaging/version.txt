@@ -1,0 +1,16 @@
+# Datos que Windows muestra en Propiedades > Detalles de PDFCasero.exe
+VSVersionInfo(
+  ffi=FixedFileInfo(filevers=(0, 1, 0, 0), prodvers=(0, 1, 0, 0), mask=0x3F, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0, date=(0, 0)),
+  kids=[
+    StringFileInfo([StringTable("0C0A04B0", [
+      StringStruct("CompanyName", "PDF Casero"),
+      StringStruct("FileDescription", "PDF Casero"),
+      StringStruct("FileVersion", "0.1.0"),
+      StringStruct("InternalName", "PDFCasero"),
+      StringStruct("OriginalFilename", "PDFCasero.exe"),
+      StringStruct("ProductName", "PDF Casero"),
+      StringStruct("ProductVersion", "0.1.0"),
+    ])]),
+    VarFileInfo([VarStruct("Translation", [0x0C0A, 1200])]),
+  ]
+)

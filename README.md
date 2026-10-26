@@ -1,6 +1,6 @@
 # PDF Casero
 
-Lector y editor de PDF para uso familiar en Windows 10 y 11. Solo lo esencial: leer PDF, reconocer texto de documentos escaneados (OCR), editar el texto y convertir PDF no editables en editables, además de dibujar esquemas (flechas, globos, líneas…).
+Lector y editor de PDF para uso familiar en Windows 10 y 11. Solo lo esencial: leer PDF, reconocer texto de documentos escaneados (OCR), editar el texto y convertir PDF no editables en editables, dibujar esquemas (flechas, globos, líneas…), organizar páginas y crear o rellenar formularios.
 
 Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-6/) (Qt) para la interfaz y [PyMuPDF](https://pymupdf.readthedocs.io/) para leer y dibujar los PDF.
 
@@ -14,9 +14,17 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | 4. Dibujo y esquemas | Flechas, globos, líneas, formas, texto y lápiz, editables después | Hecho |
 | 5. Organizar páginas | Añadir (en blanco, de otro PDF o una imagen), quitar, girar, duplicar y reordenar arrastrando | Hecho |
 | 6. Formularios | Crear casillas rellenables y rellenar formularios recibidos | Hecho |
-| 7. Instalador | Un único `.exe` con todo incluido | Pendiente |
+| 7. Instalador | Un único `.exe` con todo incluido | Hecho |
 
-## Probarlo ahora (antes de tener el instalador)
+## Instalar en Windows
+
+1. Entra en la pestaña **Actions** del repositorio, abre la última ejecución verde de **Instalador** y descarga el archivo **PDFCasero-Instalador** de la parte de abajo (es un .zip; dentro está el instalador). Cuando haya versiones publicadas, también estará en **Releases**.
+2. Haz doble clic en `PDFCasero-Instalador-x.y.z.exe` y sigue los pasos. No pide contraseña de administrador: se instala para tu usuario (si quieres, puedes elegir instalarlo para todos).
+3. Como el instalador no está firmado, Windows puede mostrar "Windows protegió su PC". Pulsa **Más información → Ejecutar de todas formas**.
+
+Lleva todo dentro, también los idiomas del OCR, así que funciona sin Internet. Durante la instalación puedes elegir crear un icono en el escritorio y usar PDF Casero para abrir los PDF; en cualquier caso aparece en **Abrir con** y en **Configuración → Aplicaciones → Aplicaciones predeterminadas**. Se desinstala desde **Configuración → Aplicaciones**, como cualquier otro programa.
+
+## Probarlo sin instalar (con Python)
 
 1. Instala [Python 3.12](https://www.python.org/downloads/windows/) y marca la casilla **Add Python to PATH**.
 2. Descarga este repositorio (botón verde **Code → Download ZIP**) y descomprímelo.
@@ -125,8 +133,24 @@ Estructura:
 - `pdfcasero/edicion.py`: cambiar, borrar y escribir texto en la página.
 - `pdfcasero/dibujo.py`: los dibujos como anotaciones PDF, con su receta para poder retocarlos.
 - `pdfcasero/herramientas_dibujo.py`: ratón y teclado del modo Dibujo.
+- `pdfcasero/formularios.py` y `herramientas_formulario.py`: campos rellenables y el modo Formulario.
 - `pdfcasero/impresion.py`: impresión.
+- `pdfcasero/autoprueba.py`: comprobación del programa ya empaquetado (`PDFCasero.exe --autoprueba resultado.txt`).
+- `packaging/`: receta de PyInstaller (`pdfcasero.spec`), instalador de Inno Setup (`instalador.iss`) e icono.
 - `pdfcasero/estilo.py`: colores y aspecto.
+
+### Crear el instalador a mano (en Windows)
+
+Lo hace solo GitHub Actions (`.github/workflows/instalador.yml`), que además lo instala, lo prueba y lo desinstala. A mano:
+
+```
+pip install -r requirements.txt pyinstaller
+python -c "from pathlib import Path; from pdfcasero.ocr import descargar_idiomas; descargar_idiomas(Path('packaging/tessdata'))"
+pyinstaller --noconfirm packaging/pdfcasero.spec
+iscc packaging\instalador.iss
+```
+
+El instalador queda en `packaging\salida\`. Hace falta [Inno Setup 6](https://jrsoftware.org/isinfo.php). Para publicar una versión: cambia `__version__` en `pdfcasero/__init__.py` y crea una etiqueta `v0.1.0`.
 
 ## Licencias
 

@@ -1,0 +1,21 @@
+name: Pruebas
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pruebas:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - name: Arranque de la ventana sin pantalla
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -c "from PySide6.QtWidgets import QApplication; import sys; app = QApplication(sys.argv); from pdfcasero.ventana import VentanaPrincipal; w = VentanaPrincipal(); w.show(); print('ok')"

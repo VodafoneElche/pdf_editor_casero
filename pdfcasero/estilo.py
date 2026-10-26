@@ -1,0 +1,35 @@
+"""Aspecto visual: claro, sobrio y con un acento rojo parecido al de Adobe Reader."""
+
+ACENTO = "#c4302b"
+
+HOJA_ESTILO = f"""
+QMainWindow, #bienvenida {{ background: #f5f5f7; }}
+QToolBar#barraPrincipal {{
+    background: #ffffff; border: none; border-bottom: 1px solid #dddde1;
+    padding: 4px 8px; spacing: 4px;
+}}
+QToolBar QToolButton {{ padding: 4px 8px; border-radius: 6px; color: #2b2b2e; }}
+QToolBar QToolButton:hover {{ background: #ececf0; }}
+QToolBar QToolButton:pressed {{ background: #e0e0e6; }}
+QToolBar QToolButton:disabled {{ color: #a9a9b0; }}
+QLineEdit {{
+    border: 1px solid #cfcfd6; border-radius: 6px; padding: 4px 6px; background: #ffffff;
+}}
+QLineEdit:focus {{ border-color: {ACENTO}; }}
+#fondoVisor, QScrollArea#visor {{ background: #e4e4e8; border: none; }}
+QListWidget#miniaturas {{ background: #f0f0f3; border: none; border-right: 1px solid #dddde1; }}
+#tituloBienvenida {{ font-size: 34px; font-weight: 600; color: {ACENTO}; margin-bottom: 4px; }}
+#textoBienvenida {{ font-size: 15px; color: #55555c; margin: 8px; }}
+QToolButton#botonPrincipal {{
+    background: {ACENTO}; color: white; font-size: 15px; font-weight: 600;
+    padding: 10px 28px; border-radius: 8px; margin: 12px;
+}}
+QToolButton#botonPrincipal:hover {{ background: #a82722; }}
+QListWidget#recientes {{
+    background: #ffffff; border: 1px solid #dddde1; border-radius: 8px; padding: 4px; font-size: 14px;
+    min-width: 420px; max-height: 260px;
+}}
+QListWidget#recientes::item {{ padding: 6px 8px; border-radius: 6px; }}
+QListWidget#recientes::item:hover {{ background: #f3f3f6; }}
+QStatusBar {{ background: #ffffff; border-top: 1px solid #dddde1; color: #55555c; }}
+"""

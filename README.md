@@ -12,8 +12,9 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | 2. OCR | Botón "Hacer editable" con Tesseract (español e inglés), seleccionar y copiar texto | Hecho |
 | 3. Editar texto | Cambiar, borrar y escribir texto dentro del PDF, con deshacer | Hecho |
 | 4. Dibujo y esquemas | Flechas, globos, líneas, formas, texto y lápiz, editables después | Hecho |
-| 5. Formularios | Crear casillas rellenables y rellenar formularios recibidos | Pendiente |
-| 6. Instalador | Un único `.exe` con todo incluido | Pendiente |
+| 5. Organizar páginas | Añadir (en blanco, de otro PDF o una imagen), quitar, girar, duplicar y reordenar arrastrando | Hecho |
+| 6. Formularios | Crear casillas rellenables y rellenar formularios recibidos | Pendiente |
+| 7. Instalador | Un único `.exe` con todo incluido | Pendiente |
 
 ## Probarlo ahora (antes de tener el instalador)
 
@@ -57,6 +58,19 @@ Pulsa **Dibujar** (Ctrl+D) y aparece una segunda barra con las herramientas:
 - **Seleccionar:** clic en un dibujo para seleccionarlo. Arrástralo para moverlo, o tira de sus cuadraditos para estirarlo. Doble clic en un globo o texto para cambiar lo que pone. Supr lo borra.
 
 Los dibujos se guardan como anotaciones PDF estándar, así que se ven en cualquier lector (Adobe, Edge, Chrome…).
+
+## Organizar páginas
+
+En la columna de miniaturas:
+
+- **Reordenar:** arrastra una miniatura arriba o abajo y suéltala donde quieras.
+- **Botón "Páginas"** (encima de las miniaturas, también con clic derecho o en "Más"):
+  - Insertar una página en blanco antes o después de la actual (por ejemplo, para hacer un esquema con Dibujar).
+  - Insertar las páginas de otro PDF o una imagen (foto, escaneo) después de la actual, como anexo.
+  - Duplicar, girar a la derecha o a la izquierda.
+  - Borrar las páginas seleccionadas (también con Supr). Con Ctrl o Mayús puedes elegir varias.
+
+Todo se puede deshacer con Ctrl+Z.
 
 ## Atajos de teclado
 

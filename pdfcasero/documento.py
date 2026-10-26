@@ -146,6 +146,79 @@ class Documento:
         edicion.escribir(self._doc[n], pymupdf.Point(x, y), texto, tamano)
         self._despues_de_cambiar(n)
 
+    # --- Organizar páginas ---------------------------------------------------
+    def insertar_en_blanco(self, antes_de: int) -> int:
+        """Añade una página en blanco del mismo tamaño que la vecina. Devuelve su número."""
+        antes_de = max(0, min(antes_de, self.num_paginas))
+        vecina = self._doc[max(0, antes_de - 1)] if self.num_paginas else None
+        ancho, alto = (vecina.rect.width, vecina.rect.height) if vecina else (595, 842)
+        self._antes_de_cambiar()
+        self._doc.new_page(antes_de, width=ancho, height=alto)
+        self._despues_de_cambiar()
+        return antes_de
+
+    def insertar_archivo(self, antes_de: int, ruta: str | Path, contrasena: str | None = None) -> int:
+        """Inserta las páginas de otro PDF, o una imagen como página nueva. Devuelve cuántas páginas añade."""
+        antes_de = max(0, min(antes_de, self.num_paginas))
+        otro = pymupdf.open(ruta)
+        try:
+            if otro.needs_pass and not otro.authenticate(contrasena or ""):
+                raise ContrasenaNecesaria(str(ruta))
+            if not otro.is_pdf:
+                otro = self._imagen_como_pdf(otro)
+            cuantas = otro.page_count
+            self._antes_de_cambiar()
+            self._doc.insert_pdf(otro, start_at=antes_de)
+        finally:
+            otro.close()
+        self._despues_de_cambiar()
+        return cuantas
+
+    def _imagen_como_pdf(self, imagen: pymupdf.Document) -> pymupdf.Document:
+        """Coloca cada imagen centrada en una página del tamaño de las del documento."""
+        ancho, alto = (self._doc[0].rect.width, self._doc[0].rect.height) if self.num_paginas else (595, 842)
+        nuevo = pymupdf.open()
+        for pagina_img in imagen:
+            pix = pagina_img.get_pixmap()
+            if pix.width > pix.height and alto > ancho:
+                ancho_p, alto_p = alto, ancho  # imagen apaisada: página apaisada
+            else:
+                ancho_p, alto_p = ancho, alto
+            pagina = nuevo.new_page(width=ancho_p, height=alto_p)
+            margen = 24
+            pagina.insert_image(pagina.rect + (margen, margen, -margen, -margen), pixmap=pix, keep_proportion=True)
+        imagen.close()
+        return nuevo
+
+    def borrar_paginas(self, paginas: list[int]) -> None:
+        paginas = sorted({p for p in paginas if 0 <= p < self.num_paginas})
+        if not paginas or len(paginas) >= self.num_paginas:
+            raise ValueError("Un PDF tiene que tener al menos una página")
+        self._antes_de_cambiar()
+        self._doc.delete_pages(paginas)
+        self._despues_de_cambiar()
+
+    def mover_pagina(self, desde: int, antes_de: int) -> int:
+        """Mueve la página `desde` delante de la que ahora es `antes_de`. Devuelve su nueva posición."""
+        if antes_de in (desde, desde + 1):
+            return desde
+        self._antes_de_cambiar()
+        self._doc.move_page(desde, antes_de if antes_de < self.num_paginas else -1)
+        self._despues_de_cambiar()
+        return antes_de if antes_de < desde else antes_de - 1
+
+    def duplicar_pagina(self, n: int) -> int:
+        self._antes_de_cambiar()
+        self._doc.fullcopy_page(n, n + 1 if n + 1 < self.num_paginas else -1)
+        self._despues_de_cambiar()
+        return n + 1
+
+    def girar_pagina(self, n: int, grados: int = 90) -> None:
+        self._antes_de_cambiar()
+        pagina = self._doc[n]
+        pagina.set_rotation((pagina.rotation + grados) % 360)
+        self._despues_de_cambiar()
+
     # --- Dibujos ------------------------------------------------------------
     def dibujo_en(self, n: int, x: float, y: float):
         return dibujo.dibujo_en(self._doc[n], (x, y))

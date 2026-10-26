@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEventLoop, QRect, QSettings, QSize, Qt, QTimer
+from PySide6.QtCore import QEventLoop, QPoint, QRect, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QImage, QIntValidator, QKeySequence, QPainter, QPixmap
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -75,6 +76,44 @@ class DelegadoMiniatura(QStyledItemDelegate):
         p.drawText(QRect(r.x(), caja.bottom() + 4, r.width(), 20), Qt.AlignmentFlag.AlignHCenter, indice.data())
 
 
+class ListaMiniaturas(QListWidget):
+    """Columna de miniaturas: se pueden arrastrar para reordenar las páginas."""
+
+    paginaSoltada = Signal(int, int)  # página movida, delante de qué página
+    borrarPulsado = Signal()
+    menuPedido = Signal(QPoint)
+
+    def __init__(self):
+        super().__init__()
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setDropIndicatorShown(True)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(lambda pos: self.menuPedido.emit(self.mapToGlobal(pos)))
+
+    def dropEvent(self, e):
+        # No dejamos que la lista mueva sus elementos: movemos la página en el PDF y la lista se rehace
+        desde = self.currentRow()
+        destino = self.indexAt(e.position().toPoint())
+        if not destino.isValid():
+            antes_de = self.count()
+        else:
+            fila = destino.row()
+            rect = self.visualRect(destino)
+            antes_de = fila + 1 if e.position().y() > rect.center().y() else fila
+        e.setDropAction(Qt.DropAction.IgnoreAction)
+        e.accept()
+        if desde >= 0:
+            self.paginaSoltada.emit(desde, antes_de)
+
+    def keyPressEvent(self, e):
+        if e.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            self.borrarPulsado.emit()
+        else:
+            super().keyPressEvent(e)
+
+
 class Bienvenida(QWidget):
     """Pantalla inicial cuando no hay ningún PDF abierto."""
 
@@ -125,13 +164,16 @@ class VentanaPrincipal(QMainWindow):
         self.resize(1200, 850)
 
         self.visor = VisorPDF()
-        self.miniaturas = QListWidget()
+        self.miniaturas = ListaMiniaturas()
         self.miniaturas.setObjectName("miniaturas")
         self.miniaturas.setItemDelegate(DelegadoMiniatura(self.miniaturas))
         self.miniaturas.setUniformItemSizes(True)
         self.miniaturas.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.miniaturas.setFixedWidth(ANCHO_MINIATURA + 48)
         self.miniaturas.currentRowChanged.connect(self._miniatura_elegida)
+        self.miniaturas.paginaSoltada.connect(self._pagina_soltada)
+        self.miniaturas.borrarPulsado.connect(self.borrar_paginas_elegidas)
+        self.miniaturas.menuPedido.connect(self._menu_paginas)
         self._cola_miniaturas: list[int] = []
         self._temporizador_mini = QTimer(self, interval=0)
         self._temporizador_mini.timeout.connect(self._generar_miniatura)
@@ -140,7 +182,19 @@ class VentanaPrincipal(QMainWindow):
         lay = QHBoxLayout(divisor)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
-        lay.addWidget(self.miniaturas)
+        izquierda = QVBoxLayout()
+        izquierda.setContentsMargins(0, 0, 0, 0)
+        izquierda.setSpacing(0)
+        self.boton_paginas = QToolButton()
+        self.boton_paginas.setObjectName("botonPaginas")
+        self.boton_paginas.setText("Páginas")
+        self.boton_paginas.setToolTip("Añadir, quitar, girar o duplicar páginas. Arrastra las miniaturas para reordenar.")
+        self.boton_paginas.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.boton_paginas.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.boton_paginas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        izquierda.addWidget(self.boton_paginas)
+        izquierda.addWidget(self.miniaturas)
+        lay.addLayout(izquierda)
         derecha = QVBoxLayout()
         derecha.setContentsMargins(0, 0, 0, 0)
         derecha.setSpacing(0)
@@ -289,6 +343,10 @@ class VentanaPrincipal(QMainWindow):
         menu = QMenu(self)
         for a in (self.acc_guardar_como, self.acc_imprimir, self.acc_ancho, self.acc_completa, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
             menu.addAction(a)
+        self.menu_paginas = self._crear_menu_paginas()
+        self.boton_paginas.setMenu(self.menu_paginas)
+        menu.insertMenu(menu.actions()[0], self.menu_paginas)
+        menu.insertSeparator(menu.actions()[1])
         boton_mas = QToolButton()
         boton_mas.setText("Más")
         boton_mas.setToolTip("Más opciones")
@@ -670,11 +728,111 @@ class VentanaPrincipal(QMainWindow):
 
     def deshacer(self):
         if self.doc and self.doc.deshacer():
-            self.visor.documento_cambiado()
+            self._estructura_cambiada(self.visor.pagina_actual)
 
     def rehacer(self):
         if self.doc and self.doc.rehacer():
-            self.visor.documento_cambiado()
+            self._estructura_cambiada(self.visor.pagina_actual)
+
+    # --- Organizar páginas --------------------------------------------------
+    def _crear_menu_paginas(self) -> QMenu:
+        menu = QMenu("Páginas", self)
+        menu.addAction("Insertar página en blanco antes", lambda: self.insertar_en_blanco(despues=False))
+        menu.addAction("Insertar página en blanco después", lambda: self.insertar_en_blanco(despues=True))
+        menu.addAction("Insertar PDF o imagen después…", self.insertar_archivo)
+        menu.addSeparator()
+        menu.addAction("Duplicar página", self.duplicar_pagina)
+        menu.addAction("Girar a la derecha", lambda: self.girar_pagina(90))
+        menu.addAction("Girar a la izquierda", lambda: self.girar_pagina(-90))
+        menu.addSeparator()
+        menu.addAction("Borrar página(s)", self.borrar_paginas_elegidas)
+        return menu
+
+    def _menu_paginas(self, posicion):
+        if self.doc:
+            self._crear_menu_paginas().exec(posicion)
+
+    def _paginas_elegidas(self) -> list[int]:
+        filas = sorted(self.miniaturas.row(it) for it in self.miniaturas.selectedItems())
+        return filas or [self.visor.pagina_actual]
+
+    def _estructura_cambiada(self, ir_a: int):
+        """Han cambiado las páginas (cuántas o su orden): rehacer la vista y las miniaturas."""
+        ir_a = max(0, min(ir_a, self.doc.num_paginas - 1))
+        self._limpiar_busqueda()
+        self.visor.cargar(self.doc)
+        self._preparar_miniaturas()
+        self._actualizar_estado()
+        QTimer.singleShot(0, lambda: self.visor.ir_a_pagina(ir_a))
+        self.miniaturas.setCurrentRow(ir_a)
+
+    def insertar_en_blanco(self, despues=True):
+        if not self.doc:
+            return
+        n = self.visor.pagina_actual + (1 if despues else 0)
+        self._estructura_cambiada(self.doc.insertar_en_blanco(n))
+        self.statusBar().showMessage(
+            f"Página en blanco añadida (página {n + 1}). Puedes escribir en ella con Editar texto o hacer un esquema con Dibujar.",
+            8000,
+        )
+
+    def insertar_archivo(self):
+        if not self.doc:
+            return
+        carpeta = self.ajustes.value("ultima_carpeta", str(Path.home()))
+        ruta, _ = QFileDialog.getOpenFileName(
+            self, "Insertar PDF o imagen", carpeta, "PDF e imágenes (*.pdf *.png *.jpg *.jpeg *.tif *.tiff *.bmp);;Todos (*)"
+        )
+        if not ruta:
+            return
+        n = self.visor.pagina_actual + 1
+        contrasena = None
+        while True:
+            try:
+                cuantas = self.doc.insertar_archivo(n, ruta, contrasena)
+                break
+            except ContrasenaNecesaria:
+                contrasena, ok = QInputDialog.getText(
+                    self, "Contraseña", "Ese PDF está protegido. Escribe la contraseña:", QLineEdit.EchoMode.Password
+                )
+                if not ok:
+                    return
+            except Exception as e:
+                QMessageBox.critical(self, "No se pudo insertar", f"No se pudo insertar el archivo:\n{ruta}\n\n{e}")
+                return
+        self._estructura_cambiada(n)
+        self.statusBar().showMessage(f"{cuantas} página(s) de {Path(ruta).name} añadidas después de la página {n}.", 8000)
+
+    def duplicar_pagina(self):
+        if self.doc:
+            self._estructura_cambiada(self.doc.duplicar_pagina(self.visor.pagina_actual))
+
+    def girar_pagina(self, grados):
+        if not self.doc:
+            return
+        paginas = self._paginas_elegidas()
+        for n in paginas:
+            self.doc.girar_pagina(n, grados)
+        self._estructura_cambiada(paginas[0])
+
+    def borrar_paginas_elegidas(self):
+        if not self.doc:
+            return
+        paginas = self._paginas_elegidas()
+        if len(paginas) >= self.doc.num_paginas:
+            QMessageBox.information(self, "No se puede", "Un PDF tiene que tener al menos una página.")
+            return
+        texto = f"la página {paginas[0] + 1}" if len(paginas) == 1 else f"{len(paginas)} páginas"
+        r = QMessageBox.question(self, "Borrar páginas", f"¿Borrar {texto}? Puedes deshacerlo con Ctrl+Z.")
+        if r == QMessageBox.StandardButton.Yes:
+            self.doc.borrar_paginas(paginas)
+            self._estructura_cambiada(paginas[0])
+
+    def _pagina_soltada(self, desde, antes_de):
+        if self.doc:
+            nueva = self.doc.mover_pagina(desde, antes_de)
+            if nueva != desde:
+                self._estructura_cambiada(nueva)
 
     # --- OCR: hacer editable ---------------------------------------------
     def _crear_aviso_escaneado(self) -> QFrame:

@@ -41,5 +41,10 @@ QLineEdit#editorEnLinea {{
     border: 2px solid {ACENTO}; border-radius: 3px; padding: 0 2px; background: #ffffff; color: #111111;
 }}
 QToolBar QToolButton:checked {{ background: #f6d9d7; color: {ACENTO}; }}
+QToolButton#botonPaginas {{
+    background: #f0f0f3; border: none; border-right: 1px solid #dddde1; border-bottom: 1px solid #dddde1;
+    padding: 6px; font-weight: 600; color: #2b2b2e;
+}}
+QToolButton#botonPaginas:hover {{ background: #e6e6ea; }}
 QStatusBar {{ background: #ffffff; border-top: 1px solid #dddde1; color: #55555c; }}
 """

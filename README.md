@@ -92,7 +92,7 @@ Si te llega un PDF con casillas para rellenar, haz clic en un campo de texto par
 Botón **Google** de la barra:
 
 - **Conectar cuenta de Google:** la primera vez se abre el navegador, entras con tu Gmail y pulsas **Permitir**. Cada ordenador (y cada usuario de Windows) usa su propia cuenta; la sesión se guarda cifrada solo en ese ordenador. Desde el mismo menú se puede **cambiar de cuenta** o **desconectarla**.
-- **Enviar a Google Docs:** convierte el PDF a Word, lo sube a tu Google Drive como Documento de Google y lo abre en el navegador para editarlo.
+- **Enviar a Google Docs:** convierte el PDF a Word (facturas incluidas: datos, tablas y gráfica en su sitio), lo sube a tu Google Drive como Documento de Google y lo abre en el navegador para editarlo.
 - **Enviar tablas a Hojas de cálculo de Google:** saca las tablas del PDF (por ejemplo, el detalle de una factura) a una Hoja de cálculo de Google, una pestaña por página, con los importes como números para poder sumarlos. Si el PDF no tiene tablas, cada línea de texto va a una fila.
 - **Traer de Google como PDF:** enseña los documentos y hojas de cálculo enviados desde PDF Casero y abre el elegido como PDF (lo convierte el propio Google). Pulsa **Guardar** para guardarlo.
 - PDF Casero solo puede ver los archivos que él mismo ha subido, no el resto de tu Drive.
@@ -149,7 +149,8 @@ Estructura:
 - `pdfcasero/dibujo.py`: los dibujos como anotaciones PDF, con su receta para poder retocarlos.
 - `pdfcasero/herramientas_dibujo.py`: ratón y teclado del modo Dibujo.
 - `pdfcasero/formularios.py` y `herramientas_formulario.py`: campos rellenables.
-- `pdfcasero/conversion.py`: PDF a Word (pdf2docx), tablas del PDF a .xlsx (PyMuPDF `find_tables` + openpyxl) y Word a PDF (Microsoft Word si está, si no mammoth).
+- `pdfcasero/word_sencillo.py`: PDF a Word pensado para Google Docs, como iLovePDF: el contenido fluye (columnas en tablas invisibles, renglones con tabuladores, tablas de verdad con su fondo gris, gráficas como imagen).
+- `pdfcasero/conversion.py`: proceso aparte para exportar a Word, PDF a Word con pdf2docx (método antiguo), tablas del PDF a .xlsx (PyMuPDF `find_tables` + openpyxl) y Word a PDF (Microsoft Word si está, si no mammoth).
 - `pdfcasero/google.py`: cuenta de Google (OAuth de escritorio con PKCE, permiso `drive.file`) y Drive (subir como Documento de Google, listar, exportar a PDF); `ventana_google.py`: su menú.
 - `pdfcasero/impresion.py`: impresión.
 - `pdfcasero/autoprueba.py`: comprobación del programa ya empaquetado (`PDFCasero.exe --autoprueba resultado.txt`).

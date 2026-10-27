@@ -645,10 +645,14 @@ class VentanaPrincipal(QMainWindow):
             r = trabajo.resultado()
             if trabajo.avance:
                 fase, i, n = trabajo.avance
-                accion = "Analizando" if fase == 1 else "Creando"
+                accion = "Analizando" if fase == 1 else "Convirtiendo"
                 dialogo.setLabelText(f"{accion} la página {i} de {n}…")
-                dialogo.setMaximum(2 * n)
-                dialogo.setValue((fase - 1) * n + i - 1)
+                if fase == 0:  # una sola fase
+                    dialogo.setMaximum(n)
+                    dialogo.setValue(i - 1)
+                else:
+                    dialogo.setMaximum(2 * n)
+                    dialogo.setValue((fase - 1) * n + i - 1)
             if r is not None:
                 final["r"] = r
                 bucle.quit()

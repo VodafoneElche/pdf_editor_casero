@@ -203,9 +203,16 @@ def pdf_a_word(origen: str, destino: str, paginas: list[int] | None = None, avis
     ajustar_docx(destino, fuentes)
 
 
-def _proceso_pdf_a_word(origen: str, destino: str, cola, paginas=None) -> None:
+def _proceso_pdf_a_word(origen: str, destino: str, cola, paginas=None, sencillo=True) -> None:
     try:
-        pdf_a_word(origen, destino, paginas, aviso=lambda fase, i, total: cola.put(("avance", fase, i, total)))
+        if sencillo:
+            from .word_sencillo import pdf_a_word_sencillo
+
+            with open(origen, "rb") as f:
+                datos = f.read()
+            pdf_a_word_sencillo(datos, destino, paginas, avance=lambda i, total: cola.put(("avance", 0, i, total)))
+        else:
+            pdf_a_word(origen, destino, paginas, aviso=lambda fase, i, total: cola.put(("avance", fase, i, total)))
         cola.put(("ok", destino))
     except Exception as e:  # el mensaje lo enseña la ventana
         cola.put(("error", f"{type(e).__name__}: {e}"))
@@ -214,15 +221,16 @@ def _proceso_pdf_a_word(origen: str, destino: str, cola, paginas=None) -> None:
 class ExportacionWord:
     """Exportación en un proceso aparte, para que la ventana no se congele y se pueda cancelar."""
 
-    def __init__(self, datos_pdf: bytes, destino: str, paginas: list[int] | None = None):
+    def __init__(self, datos_pdf: bytes, destino: str, paginas: list[int] | None = None, sencillo: bool = True):
         self._tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
         self._tmp.write(datos_pdf)
         self._tmp.close()
-        self.avance = None  # (fase, página, total): fase 1 = analizando, 2 = creando
+        # (fase, página, total): fase 1 = analizando, 2 = creando; 0 = conversor sencillo (una sola fase)
+        self.avance = None
         contexto = multiprocessing.get_context("spawn")
         self._cola = contexto.Queue()
         self._proceso = contexto.Process(
-            target=_proceso_pdf_a_word, args=(self._tmp.name, destino, self._cola, paginas), daemon=True
+            target=_proceso_pdf_a_word, args=(self._tmp.name, destino, self._cola, paginas, sencillo), daemon=True
         )
         self._proceso.start()
 

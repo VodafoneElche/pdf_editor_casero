@@ -60,7 +60,7 @@ def _word_funciona() -> str:
     texto = pymupdf.open(vuelta)[0].get_text()
     if "25 €" not in texto:
         raise RuntimeError(f"Importar Word ha fallado ({metodo}): {texto!r}")
-    return f"Word ok (exportar con pdf2docx, importar con {metodo})"
+    return f"Word ok (exportar con el conversor sencillo, importar con {metodo})"
 
 
 def _google_funciona() -> str:

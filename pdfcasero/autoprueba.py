@@ -63,6 +63,22 @@ def _word_funciona() -> str:
     return f"Word ok (exportar con pdf2docx, importar con {metodo})"
 
 
+def _google_funciona() -> str:
+    """La sesión de Google se guarda cifrada y se vuelve a leer (sin conectarse a internet)."""
+    import tempfile
+    from pathlib import Path
+
+    from . import google
+
+    prueba = b'{"refresh_token": "x", "correo": "a@gmail.com"}'
+    guardado = google._proteger(prueba)
+    if google._desproteger(guardado) != prueba or (sys.platform == "win32" and b"refresh" in guardado):
+        raise RuntimeError("No se puede guardar la sesión de Google")
+    cuenta = google.CuentaGoogle(Path(tempfile.mkdtemp()) / "g.json")
+    cliente = "con ID de cliente" if cuenta.configurada else "SIN ID de cliente (google_cliente.json)"
+    return f"Google ok ({cliente})"
+
+
 def ejecutar(salida: str) -> int:
     lineas, codigo = [], 0
     try:
@@ -79,6 +95,7 @@ def ejecutar(salida: str) -> int:
         lineas.append("Ventana ok")
         lineas.append(_ocr_funciona())
         lineas.append(_word_funciona())
+        lineas.append(_google_funciona())
     except Exception:
         lineas.append(traceback.format_exc())
         codigo = 1

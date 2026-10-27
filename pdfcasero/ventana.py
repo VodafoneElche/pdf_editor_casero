@@ -36,6 +36,7 @@ from . import conversion
 from .dialogo_ocr import HiloOCR, asegurar_idiomas, elegir_paginas
 from .documento import ContrasenaNecesaria, Documento
 from .impresion import imprimir
+from .ventana_google import ControlGoogle
 from .visor import VisorPDF
 
 MAX_RECIENTES = 8
@@ -184,13 +185,16 @@ class Bienvenida(QWidget):
         boton.setText("Abrir PDF…")
         boton.setObjectName("botonPrincipal")
         boton.clicked.connect(ventana.abrir_dialogo)
+        boton_google = QToolButton()
+        boton_google.setText("Traer de Google Docs…")
+        boton_google.clicked.connect(lambda: ventana.google.traer())
         self.lista = QListWidget()
         self.lista.setObjectName("recientes")
         self.lista.setMaximumWidth(520)
         self.lista.itemActivated.connect(lambda it: ventana.abrir(it.data(Qt.ItemDataRole.UserRole)))
         self.etiqueta_recientes = QLabel("Abiertos recientemente")
         self.etiqueta_recientes.setObjectName("textoBienvenida")
-        for w in (titulo, texto, boton, self.etiqueta_recientes, self.lista):
+        for w in (titulo, texto, boton, boton_google, self.etiqueta_recientes, self.lista):
             lay.addWidget(w, 0, Qt.AlignmentFlag.AlignHCenter)
 
     def actualizar(self, recientes: list[str]):
@@ -340,8 +344,8 @@ class VentanaPrincipal(QMainWindow):
         )
         self.acc_formulario.setCheckable(True)
         self.acc_word = self._accion(
-            "Exportar a Word", None, QKeySequence("Ctrl+Shift+W"), self.exportar_word,
-            "Guardar una copia en Word (.docx) para editarla en Google Docs o en Word (Ctrl+Mayús+W)",
+            "Guardar copia en Word (.docx)", None, QKeySequence("Ctrl+Shift+W"), self.exportar_word,
+            "Guardar una copia en Word (.docx) (Ctrl+Mayús+W)",
         )
         # Jose prefirió quitar "crear formularios" (los recibidos se siguen pudiendo rellenar)
         self.acc_formulario.setVisible(False)
@@ -409,7 +413,9 @@ class VentanaPrincipal(QMainWindow):
         barra.addAction(self.acc_ocr)
         barra.addAction(self.acc_editar)
         barra.addAction(self.acc_dibujar)
-        barra.addAction(self.acc_word)
+        self.google = ControlGoogle(self)
+        barra.addWidget(self.google.boton)
+        self.addAction(self.acc_word)  # sin botón propio: está en el menú Google Docs
         barra.addAction(self.acc_deshacer)
         barra.addAction(self.acc_rehacer)
         barra.addSeparator()
@@ -564,13 +570,23 @@ class VentanaPrincipal(QMainWindow):
         if not self.doc:
             return
         sugerido = str(self.doc.ruta.with_suffix(".docx"))
-        ruta, _ = QFileDialog.getSaveFileName(self, "Exportar a Word", sugerido, "Documento de Word (*.docx)")
+        ruta, _ = QFileDialog.getSaveFileName(self, "Guardar copia en Word", sugerido, "Documento de Word (*.docx)")
         if not ruta:
             return
         if not ruta.lower().endswith(".docx"):
             ruta += ".docx"
+        if self.convertir_a_docx(ruta):
+            QMessageBox.information(
+                self,
+                "Guardado en Word",
+                f"Listo: {Path(ruta).name}\n\nPara editar en Google Docs es más cómodo el botón "
+                "«Google Docs → Enviar a Google Docs», que lo sube y lo trae de vuelta como PDF.",
+            )
+
+    def convertir_a_docx(self, ruta: str) -> bool:
+        """Convierte el PDF abierto en el .docx `ruta`, con aviso de espera y Cancelar."""
         dialogo = QProgressDialog("Convirtiendo a Word… (en PDF largos puede tardar unos minutos)", "Cancelar", 0, 0, self)
-        dialogo.setWindowTitle("Exportar a Word")
+        dialogo.setWindowTitle("Convirtiendo")
         dialogo.setWindowModality(Qt.WindowModality.WindowModal)
         dialogo.setMinimumDuration(0)
         trabajo = conversion.ExportacionWord(self.doc.copia_en_memoria(), ruta)
@@ -596,17 +612,9 @@ class VentanaPrincipal(QMainWindow):
         reloj.stop()
         dialogo.close()
         estado, detalle = final.get("r", ("error", ""))
-        if estado == "ok":
-            QMessageBox.information(
-                self,
-                "Exportado a Word",
-                f"Listo: {Path(ruta).name}\n\nPara editarlo en Google: sube el archivo a Google Drive, "
-                "haz clic derecho y elige «Abrir con → Documentos de Google».\n\n"
-                "Cuando termines, en Google Docs usa «Archivo → Descargar → Word (.docx)» y ábrelo aquí con Abrir "
-                "para volver a tenerlo en PDF.",
-            )
-        elif estado == "error":
-            QMessageBox.critical(self, "No se pudo exportar", f"No se pudo convertir a Word.\n\n{detalle}")
+        if estado == "error":
+            QMessageBox.critical(self, "No se pudo convertir", f"No se pudo convertir a Word.\n\n{detalle}")
+        return estado == "ok"
 
     def cerrar_documento(self) -> bool:
         """Cierra el PDF. Devuelve False si el usuario cancela por tener cambios sin guardar."""

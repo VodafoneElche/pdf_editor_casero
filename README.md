@@ -15,6 +15,7 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | 5. Organizar páginas | Añadir (en blanco, de otro PDF o una imagen), quitar, girar, duplicar y reordenar arrastrando | Hecho |
 | 6. Formularios | Rellenar formularios recibidos (crear formularios se quitó a petición de Jose) | Hecho |
 | Extra | Exportar a Word (.docx) para Google Docs e importar .docx como PDF | Hecho |
+| Extra | Cuenta de Google: enviar a Google Docs y traer de vuelta como PDF | Hecho |
 | 7. Instalador | Un único `.exe` con todo incluido | Hecho |
 
 ## Instalar en Windows
@@ -86,10 +87,22 @@ Todo se puede deshacer con Ctrl+Z.
 
 Si te llega un PDF con casillas para rellenar, haz clic en un campo de texto para escribir (Intro acepta) o en una casilla para marcarla o desmarcarla. Después guarda.
 
-## Word y Google Docs
+## Google Docs y Word
 
-- **Exportar a Word:** guarda una copia en `.docx`. Para editarla en Google: súbela a Google Drive, clic derecho y **Abrir con → Documentos de Google**. Funciona muy bien con PDF de texto (facturas, cartas); con formularios impresos como imagen el resultado es más pobre.
-- **Abrir un Word:** en **Abrir** elige un `.docx` (por ejemplo, el que descargas de Google Docs con **Archivo → Descargar → Word**). Se convierte en PDF y al pulsar **Guardar** se guarda como PDF. Si el ordenador tiene Microsoft Word, la conversión la hace Word y queda idéntica; si no, el diseño puede variar un poco.
+Botón **Google Docs** de la barra:
+
+- **Conectar cuenta de Google:** la primera vez se abre el navegador, entras con tu Gmail y pulsas **Permitir**. Cada ordenador (y cada usuario de Windows) usa su propia cuenta; la sesión se guarda cifrada solo en ese ordenador. Desde el mismo menú se puede **cambiar de cuenta** o **desconectarla**.
+- **Enviar a Google Docs:** convierte el PDF a Word, lo sube a tu Google Drive como Documento de Google y lo abre en el navegador para editarlo.
+- **Traer de Google Docs como PDF:** enseña los documentos enviados desde PDF Casero y abre el elegido como PDF (lo convierte el propio Google). Pulsa **Guardar** para guardarlo.
+- PDF Casero solo puede ver los documentos que él mismo ha subido, no el resto de tu Drive.
+- **Guardar copia en Word (.docx)** y **Abrir** un `.docx` siguen funcionando sin cuenta. Funciona muy bien con PDF de texto (facturas, cartas); con formularios impresos como imagen el resultado es más pobre.
+
+### Registrar la app en Google (una sola vez, lo hace el administrador)
+
+1. En [console.cloud.google.com](https://console.cloud.google.com) crea el proyecto «PDF Casero» y habilita **Google Drive API**.
+2. En **Google Auth Platform**: tipo **Externo**, nombre «PDF Casero», y en **Público** pulsa **Publicar aplicación** (si se queda en modo prueba, solo entran los usuarios de prueba y la sesión caduca cada 7 días).
+3. En **Clientes** crea uno de tipo **Aplicación de escritorio** y descarga el JSON.
+4. Guarda su contenido como secreto del repositorio `GOOGLE_CLIENTE_JSON`: el instalador lo incluye. Sin él, la app pide elegir ese archivo la primera vez.
 
 ## Atajos de teclado
 
@@ -101,7 +114,7 @@ Si te llega un PDF con casillas para rellenar, haz clic en un campo de texto par
 | Hacer editable (OCR) | Ctrl+E |
 | Editar texto | Ctrl+T |
 | Dibujar | Ctrl+D |
-| Exportar a Word | Ctrl+Mayús+W |
+| Guardar copia en Word | Ctrl+Mayús+W |
 | Deshacer / rehacer | Ctrl+Z / Ctrl+Y |
 | Borrar el texto seleccionado | Supr |
 | Mover la página con la mano | Arrastrar fuera del texto, o con la rueda del ratón pulsada |
@@ -135,6 +148,7 @@ Estructura:
 - `pdfcasero/herramientas_dibujo.py`: ratón y teclado del modo Dibujo.
 - `pdfcasero/formularios.py` y `herramientas_formulario.py`: campos rellenables.
 - `pdfcasero/conversion.py`: PDF a Word (pdf2docx) y Word a PDF (Microsoft Word si está, si no mammoth).
+- `pdfcasero/google.py`: cuenta de Google (OAuth de escritorio con PKCE, permiso `drive.file`) y Drive (subir como Documento de Google, listar, exportar a PDF); `ventana_google.py`: su menú.
 - `pdfcasero/impresion.py`: impresión.
 - `pdfcasero/autoprueba.py`: comprobación del programa ya empaquetado (`PDFCasero.exe --autoprueba resultado.txt`).
 - `packaging/`: receta de PyInstaller (`pdfcasero.spec`), instalador de Inno Setup (`instalador.iss`) e icono.

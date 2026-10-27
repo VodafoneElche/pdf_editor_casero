@@ -1,4 +1,4 @@
-"""Botón «Google Docs» de la ventana: conectar la cuenta, enviar y traer documentos."""
+"""Botón «Google» de la ventana: conectar la cuenta, enviar a Docs u Hojas de cálculo y traer como PDF."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from . import google
+from . import conversion, google
 from .documento import Documento
 
 AYUDA_CONFIGURAR = (
@@ -80,13 +80,14 @@ def con_espera(padre, titulo: str, texto: str, funcion, *args, cancelable: bool 
 class ElegirDocumento(QDialog):
     def __init__(self, padre, documentos: list[dict], correo: str):
         super().__init__(padre)
-        self.setWindowTitle("Traer de Google Docs")
+        self.setWindowTitle("Traer de Google")
         self.resize(480, 420)
         lay = QVBoxLayout(self)
-        lay.addWidget(QLabel(f"Documentos enviados desde PDF Casero a <b>{correo}</b>:"))
+        lay.addWidget(QLabel(f"Documentos y hojas de cálculo enviados desde PDF Casero a <b>{correo}</b>:"))
         self.lista = QListWidget()
         for d in documentos:
-            it = QListWidgetItem(f"{d['name']}    ·    {_fecha(d.get('modifiedTime', ''))}")
+            tipo = "Hoja de cálculo" if d.get("mimeType") == google.TIPO_HOJA_GOOGLE else "Documento"
+            it = QListWidgetItem(f"{d['name']}    ·    {tipo}    ·    {_fecha(d.get('modifiedTime', ''))}")
             it.setData(Qt.ItemDataRole.UserRole, d)
             self.lista.addItem(it)
         self.lista.setCurrentRow(0)
@@ -112,7 +113,7 @@ def _fecha(iso: str) -> str:
 
 
 class ControlGoogle:
-    """Lo que hace el botón «Google Docs» de la barra."""
+    """Lo que hace el botón «Google» de la barra."""
 
     def __init__(self, ventana):
         self.ventana = ventana
@@ -120,8 +121,8 @@ class ControlGoogle:
         self.menu = QMenu(ventana)
         self.menu.aboutToShow.connect(self._rellenar_menu)
         self.boton = QToolButton()
-        self.boton.setText("Google Docs")
-        self.boton.setToolTip("Editar en Google Docs con tu cuenta de Gmail y traerlo de vuelta como PDF")
+        self.boton.setText("Google")
+        self.boton.setToolTip("Editar en Google Docs u Hojas de cálculo con tu Gmail y traerlo de vuelta como PDF")
         self.boton.setMenu(self.menu)
         self.boton.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
 
@@ -130,7 +131,9 @@ class ControlGoogle:
         m.clear()
         enviar = m.addAction("Enviar a Google Docs para editar", self.enviar)
         enviar.setEnabled(v.doc is not None)
-        m.addAction("Traer de Google Docs como PDF…", self.traer)
+        hoja = m.addAction("Enviar tablas a Hojas de cálculo de Google", self.enviar_hoja)
+        hoja.setEnabled(v.doc is not None)
+        m.addAction("Traer de Google como PDF…", self.traer)
         m.addSeparator()
         guardar = m.addAction("Guardar copia en Word (.docx)…", v.exportar_word)
         guardar.setEnabled(v.doc is not None)
@@ -217,28 +220,61 @@ class ControlGoogle:
         QMessageBox.information(
             v, "Enviado a Google Docs",
             f"«{nombre}» se ha abierto en Google Docs ({self.cuenta.correo}).\n\n"
-            "Cuando termines de editarlo, vuelve aquí y pulsa\nGoogle Docs → Traer de Google Docs como PDF.",
+            "Cuando termines de editarlo, vuelve aquí y pulsa\nGoogle → Traer de Google como PDF.",
+        )
+
+    def enviar_hoja(self):
+        v = self.ventana
+        if not v.doc or not self._asegurar_conexion():
+            return
+        nombre = v.doc.ruta.stem
+        xlsx = Path(tempfile.mkdtemp(prefix="pdfcasero_")) / f"{nombre}.xlsx"
+        try:
+            tablas = con_espera(
+                v, "Enviar a Hojas de cálculo", "Buscando las tablas del PDF…",
+                conversion.pdf_a_excel, v.doc.copia_en_memoria(), str(xlsx), cancelable=True,
+            )
+        except InterruptedError:
+            return
+        except Exception as e:
+            QMessageBox.critical(v, "Enviar a Hojas de cálculo", f"No se han podido sacar las tablas.\n\n{e}")
+            return
+        subido = self._con_cuenta(
+            "Enviar a Hojas de cálculo", f"Subiendo «{nombre}» a tu Google Drive…", self.cuenta.subir_como_hoja, str(xlsx), nombre
+        )
+        xlsx.unlink(missing_ok=True)
+        if not subido:
+            return
+        webbrowser.open(subido.get("webViewLink") or f"https://docs.google.com/spreadsheets/d/{subido['id']}/edit")
+        if tablas:
+            detalle = f"Se han pasado {tablas} tablas (una pestaña por página)."
+        else:
+            detalle = "No se han encontrado tablas: cada línea de texto va en una fila."
+        QMessageBox.information(
+            v, "Enviado a Hojas de cálculo",
+            f"«{nombre}» se ha abierto en Hojas de cálculo de Google ({self.cuenta.correo}).\n{detalle}\n\n"
+            "Para tenerlo en PDF, pulsa Google → Traer de Google como PDF.",
         )
 
     def traer(self):
         v = self.ventana
         if not self._asegurar_conexion():
             return
-        documentos = self._con_cuenta("Traer de Google Docs", "Buscando tus documentos…", self.cuenta.documentos)
+        documentos = self._con_cuenta("Traer de Google", "Buscando tus documentos…", self.cuenta.documentos)
         if documentos is None:
             return
         if not documentos:
             QMessageBox.information(
-                v, "Traer de Google Docs",
+                v, "Traer de Google",
                 "Todavía no hay documentos enviados desde PDF Casero con esta cuenta.\n\n"
-                "Abre un PDF y pulsa Google Docs → Enviar a Google Docs.",
+                "Abre un PDF y pulsa Google → Enviar a Google Docs o Enviar tablas a Hojas de cálculo.",
             )
             return
         dialogo = ElegirDocumento(v, documentos, self.cuenta.correo)
         if dialogo.exec() != QDialog.DialogCode.Accepted or not (elegido := dialogo.elegido()):
             return
         datos = self._con_cuenta(
-            "Traer de Google Docs", f"Descargando «{elegido['name']}» como PDF…", self.cuenta.descargar_pdf, elegido["id"]
+            "Traer de Google", f"Descargando «{elegido['name']}» como PDF…", self.cuenta.descargar_pdf, elegido["id"]
         )
         if not datos:
             return
@@ -251,4 +287,4 @@ class ControlGoogle:
         doc.nuevo = True
         doc.modificado = True
         if v._mostrar_documento(doc, str(doc.ruta), reciente=False):
-            v.statusBar().showMessage("Traído de Google Docs. Pulsa Guardar para guardarlo como PDF.", 15000)
+            v.statusBar().showMessage("Traído de Google. Pulsa Guardar para guardarlo como PDF.", 15000)

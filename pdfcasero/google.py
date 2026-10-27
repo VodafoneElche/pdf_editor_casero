@@ -37,6 +37,8 @@ URL_SUBIDA = "https://www.googleapis.com/upload/drive/v3/files"
 PERMISO = "https://www.googleapis.com/auth/drive.file"
 TIPO_DOC_GOOGLE = "application/vnd.google-apps.document"
 TIPO_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+TIPO_HOJA_GOOGLE = "application/vnd.google-apps.spreadsheet"
+TIPO_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 PAGINA_FIN = """<!doctype html><meta charset="utf-8"><title>PDF Casero</title>
 <body style="font-family:Segoe UI,sans-serif;text-align:center;margin-top:15vh;color:#1d1d1f">
@@ -282,32 +284,40 @@ class CuentaGoogle:
         return json.loads(cuerpo) if cuerpo else {}
 
     # Drive
-    def subir_como_doc(self, ruta_docx: str, nombre: str) -> dict:
-        """Sube un .docx convirtiéndolo en Documento de Google. Devuelve {id, name, webViewLink}."""
-        meta = json.dumps({"name": nombre, "mimeType": TIPO_DOC_GOOGLE}).encode()
+    def subir(self, ruta: str, nombre: str, tipo_archivo: str, tipo_google: str) -> dict:
+        """Sube un archivo convirtiéndolo al tipo de Google indicado. Devuelve {id, name, webViewLink}."""
+        meta = json.dumps({"name": nombre, "mimeType": tipo_google}).encode()
         _, resp = self._api(
             "POST", URL_SUBIDA + "?uploadType=resumable&fields=id,name,webViewLink", meta,
-            {"Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": TIPO_DOCX},
+            {"Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": tipo_archivo},
             crudo=True,
         )
         destino = resp.get("Location")
         if not destino:
             raise ErrorGoogle("Google no ha aceptado la subida.")
-        datos = Path(ruta_docx).read_bytes()
-        cuerpo, _ = self._api("PUT", destino, datos, {"Content-Type": TIPO_DOCX}, crudo=True, timeout=600)
+        datos = Path(ruta).read_bytes()
+        cuerpo, _ = self._api("PUT", destino, datos, {"Content-Type": tipo_archivo}, crudo=True, timeout=600)
         return json.loads(cuerpo)
 
+    def subir_como_doc(self, ruta_docx: str, nombre: str) -> dict:
+        """Un .docx convertido en Documento de Google."""
+        return self.subir(ruta_docx, nombre, TIPO_DOCX, TIPO_DOC_GOOGLE)
+
+    def subir_como_hoja(self, ruta_xlsx: str, nombre: str) -> dict:
+        """Un .xlsx convertido en Hoja de cálculo de Google."""
+        return self.subir(ruta_xlsx, nombre, TIPO_XLSX, TIPO_HOJA_GOOGLE)
+
     def documentos(self) -> list[dict]:
-        """Documentos de Google que ve la app (los que ha subido ella), del más reciente al más antiguo."""
+        """Documentos y hojas de cálculo de Google que ve la app (los que ha subido ella), del más reciente al más antiguo."""
         q = urllib.parse.urlencode({
-            "q": f"mimeType='{TIPO_DOC_GOOGLE}' and trashed=false",
+            "q": f"(mimeType='{TIPO_DOC_GOOGLE}' or mimeType='{TIPO_HOJA_GOOGLE}') and trashed=false",
             "orderBy": "modifiedTime desc", "pageSize": "100",
-            "fields": "files(id,name,modifiedTime,webViewLink)",
+            "fields": "files(id,name,mimeType,modifiedTime,webViewLink)",
         })
         return self._api("GET", f"{URL_DRIVE}/files?{q}").get("files", [])
 
     def descargar_pdf(self, id_doc: str) -> bytes:
-        """El Documento de Google convertido a PDF por el propio Google."""
+        """El Documento u Hoja de cálculo de Google convertido a PDF por el propio Google."""
         q = urllib.parse.urlencode({"mimeType": "application/pdf"})
         cuerpo, _ = self._api("GET", f"{URL_DRIVE}/files/{id_doc}/export?{q}", crudo=True, timeout=300)
         return cuerpo

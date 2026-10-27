@@ -43,7 +43,7 @@ a = Analysis(
         *idiomas,
         *collect_data_files("docx"),  # plantilla vacía de Word que usa python-docx
     ],
-    hiddenimports=["pdf2docx", "mammoth", "fitz"],
+    hiddenimports=["pdf2docx", "mammoth", "fitz", "openpyxl"],
     excludes=NO_USADOS,
     noarchive=False,
 )

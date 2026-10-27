@@ -14,6 +14,7 @@ from pdfcasero import google
 
 class FalsoGoogle(http.server.BaseHTTPRequestHandler):
     archivos = {}
+    tipos = {}
     tokens = []
     revocados = []
 
@@ -54,7 +55,9 @@ class FalsoGoogle(http.server.BaseHTTPRequestHandler):
             return self._json({})
         if ruta.path == "/upload" and self._autorizado():
             meta = json.loads(self._cuerpo())
-            assert meta["mimeType"] == google.TIPO_DOC_GOOGLE
+            origen = {google.TIPO_DOC_GOOGLE: google.TIPO_DOCX, google.TIPO_HOJA_GOOGLE: google.TIPO_XLSX}[meta["mimeType"]]
+            assert self.headers["X-Upload-Content-Type"] == origen
+            FalsoGoogle.tipos[meta["name"]] = meta["mimeType"]
             return self._json({}, cabeceras={"Location": f"http://127.0.0.1:{self.server.server_port}/sesion/{meta['name']}"})
 
     def do_PUT(self):
@@ -72,7 +75,7 @@ class FalsoGoogle(http.server.BaseHTTPRequestHandler):
         if ruta.path == "/drive/about":
             return self._json({"user": {"emailAddress": "familia@gmail.com"}})
         if ruta.path == "/drive/files":
-            return self._json({"files": [{"id": k, "name": v[0], "modifiedTime": "2026-10-27T10:00:00Z"} for k, v in self.archivos.items()]})
+            return self._json({"files": [{"id": k, "name": v[0], "mimeType": self.tipos[v[0]], "modifiedTime": "2026-10-27T10:00:00Z"} for k, v in self.archivos.items()]})
         if ruta.path.endswith("/export"):
             id_ = ruta.path.split("/")[-2]
             doc = pymupdf.open()
@@ -93,7 +96,7 @@ def falso(monkeypatch):
     monkeypatch.setattr(google, "URL_REVOCAR", base + "/revoke")
     monkeypatch.setattr(google, "URL_DRIVE", base + "/drive")
     monkeypatch.setattr(google, "URL_SUBIDA", base + "/upload")
-    FalsoGoogle.archivos, FalsoGoogle.tokens, FalsoGoogle.revocados = {}, [], []
+    FalsoGoogle.archivos, FalsoGoogle.tipos, FalsoGoogle.tokens, FalsoGoogle.revocados = {}, {}, [], []
     yield base
     servidor.shutdown()
 
@@ -125,8 +128,12 @@ def test_conectar_subir_listar_y_traer_pdf(falso, tmp_path):
     assert FalsoGoogle.tokens[-1]["grant_type"] == "refresh_token"
     assert FalsoGoogle.archivos[subido["id"]] == ("Carta", b"PK falso docx")
 
+    xlsx = tmp_path / "gastos.xlsx"
+    xlsx.write_bytes(b"PK falso xlsx")
+    cuenta.subir_como_hoja(str(xlsx), "Gastos")
+
     docs = cuenta.documentos()
-    assert [d["name"] for d in docs] == ["Carta"]
+    assert [(d["name"], d["mimeType"]) for d in docs] == [("Carta", google.TIPO_DOC_GOOGLE), ("Gastos", google.TIPO_HOJA_GOOGLE)]
     pdf = pymupdf.open(stream=cuenta.descargar_pdf(docs[0]["id"]), filetype="pdf")
     assert "Documento Carta" in pdf[0].get_text()
 

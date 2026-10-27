@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import multiprocessing
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -80,6 +81,81 @@ class ExportacionWord:
             os.remove(self._tmp.name)
         except OSError:
             pass
+
+
+# --- PDF → hoja de cálculo ---------------------------------------------------------
+_NUMERO = re.compile(r"^-?(\d{1,3}(\.\d{3})+|\d+)(,\d+)?\s*(€|%)?$")
+
+
+def _valor(texto: str):
+    """Convierte "1.028,26 €" en el número 1028.26 (formato español); el resto queda como texto."""
+    t = " ".join(texto.split())
+    if not _NUMERO.match(t):
+        return t or None
+    simbolo = t[-1] if t[-1] in "€%" else ""
+    numero = float(t.rstrip("€% ").replace(".", "").replace(",", "."))
+    return (numero / 100 if simbolo == "%" else numero), simbolo
+
+
+def pdf_a_excel(datos_pdf: bytes, destino: str, cancelado=lambda: False, avance=lambda n, total: None) -> int:
+    """Pasa las tablas del PDF a un .xlsx (una hoja por página con tablas). Devuelve cuántas tablas.
+
+    Si no hay ninguna tabla, cada línea de texto va a una fila, para no entregar una hoja vacía.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    doc = pymupdf.open(stream=datos_pdf, filetype="pdf")
+    libro = Workbook()
+    libro.remove(libro.active)
+    negrita = Font(bold=True)
+    tablas = 0
+    for n, pagina in enumerate(doc):
+        if cancelado():
+            raise InterruptedError
+        avance(n, doc.page_count)
+        encontradas = pagina.find_tables().tables
+        if not encontradas:
+            continue
+        hoja = libro.create_sheet(f"Página {n + 1}")
+        fila = 1
+        for tabla in encontradas:
+            tablas += 1
+            valores = [
+                [_valor(pagina.get_text("text", clip=pymupdf.Rect(c))) if c else None for c in f.cells]
+                for f in tabla.rows
+            ]
+            # Las columnas vacías salen de rayas sueltas del diseño: fuera
+            usadas = [j for j in range(tabla.col_count) if any(j < len(f) and f[j] is not None for f in valores)]
+            for i, fila_tabla in enumerate(valores):
+                for k, j in enumerate(usadas):
+                    valor = fila_tabla[j] if j < len(fila_tabla) else None
+                    if valor is None:
+                        continue
+                    destino_celda = hoja.cell(fila, k + 1)
+                    if isinstance(valor, tuple):
+                        destino_celda.value = valor[0]
+                        destino_celda.number_format = {"€": '#,##0.00 "€"', "%": "0.00%"}.get(valor[1], "General")
+                    else:
+                        destino_celda.value = valor
+                    if i == 0:
+                        destino_celda.font = negrita
+                fila += 1
+            fila += 1  # una fila en blanco entre tablas
+        for columna in hoja.columns:
+            ancho = max((len(str(c.value)) for c in columna if c.value is not None), default=8)
+            hoja.column_dimensions[columna[0].column_letter].width = min(max(ancho + 2, 8), 60)
+    if tablas == 0:
+        for n, pagina in enumerate(doc):
+            hoja = libro.create_sheet(f"Página {n + 1}")
+            for linea in pagina.get_text("text").splitlines():
+                if linea.strip():
+                    valor = _valor(linea)
+                    hoja.append([valor[0] if isinstance(valor, tuple) else valor])
+        if not libro.sheetnames:
+            libro.create_sheet("Hoja 1")
+    libro.save(destino)
+    return tablas
 
 
 # --- Word → PDF ------------------------------------------------------------------

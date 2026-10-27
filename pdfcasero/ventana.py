@@ -186,7 +186,7 @@ class Bienvenida(QWidget):
         boton.setObjectName("botonPrincipal")
         boton.clicked.connect(ventana.abrir_dialogo)
         boton_google = QToolButton()
-        boton_google.setText("Traer de Google Docs…")
+        boton_google.setText("Traer de Google…")
         boton_google.clicked.connect(lambda: ventana.google.traer())
         self.lista = QListWidget()
         self.lista.setObjectName("recientes")
@@ -415,7 +415,7 @@ class VentanaPrincipal(QMainWindow):
         barra.addAction(self.acc_dibujar)
         self.google = ControlGoogle(self)
         barra.addWidget(self.google.boton)
-        self.addAction(self.acc_word)  # sin botón propio: está en el menú Google Docs
+        self.addAction(self.acc_word)  # sin botón propio: está en el menú Google
         barra.addAction(self.acc_deshacer)
         barra.addAction(self.acc_rehacer)
         barra.addSeparator()
@@ -580,7 +580,7 @@ class VentanaPrincipal(QMainWindow):
                 self,
                 "Guardado en Word",
                 f"Listo: {Path(ruta).name}\n\nPara editar en Google Docs es más cómodo el botón "
-                "«Google Docs → Enviar a Google Docs», que lo sube y lo trae de vuelta como PDF.",
+                "«Google → Enviar a Google Docs», que lo sube y lo trae de vuelta como PDF.",
             )
 
     def convertir_a_docx(self, ruta: str) -> bool:

@@ -44,8 +44,7 @@ def main() -> int:
     # "Abrir con" desde el Explorador de Windows pasa la ruta como argumento
     for arg in sys.argv[1:]:
         if arg.lower().endswith((".pdf", ".docx")):
-            ventana.abrir(arg)
-            break
+            ventana.abrir(arg)  # cada uno en su pestaña
     return app.exec()
 
 

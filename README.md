@@ -16,6 +16,7 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | 6. Formularios | Rellenar formularios recibidos (crear formularios se quitó a petición de Jose) | Hecho |
 | Extra | Exportar a Word (.docx) para Google Docs e importar .docx como PDF | Hecho |
 | Extra | Cuenta de Google: enviar a Google Docs u Hojas de cálculo y traer de vuelta como PDF | Hecho |
+| Extra | Varios PDF abiertos a la vez, cada uno en su pestaña (como en Adobe) | Hecho |
 | 7. Instalador | Un único `.exe` con todo incluido | Hecho |
 
 ## Instalar en Windows
@@ -127,7 +128,8 @@ Botón **Google** de la barra:
 | Ajustar al ancho / página completa (también en "Más") | Ctrl+0 / Ctrl+1 |
 | Página siguiente / anterior | Ctrl+→ / Ctrl+←, o Av Pág / Re Pág |
 | Pantalla completa | F11 |
-| Cerrar PDF | Ctrl+W |
+| Cerrar PDF (su pestaña) | Ctrl+W |
+| Pestaña siguiente / anterior | Ctrl+Tab / Ctrl+Mayús+Tab |
 
 También se puede arrastrar un PDF a la ventana. La pantalla de inicio recuerda los últimos PDF abiertos.
 

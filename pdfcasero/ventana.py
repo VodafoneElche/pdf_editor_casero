@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QStyle,
     QStyledItemDelegate,
     QStackedWidget,
+    QTabBar,
     QToolBar,
     QToolButton,
     QVBoxLayout,
@@ -242,7 +243,8 @@ class VentanaPrincipal(QMainWindow):
     def __init__(self):
         super().__init__()
         self.ajustes = QSettings("PDFCasero", "PDFCasero")
-        self.doc: Documento | None = None
+        self.doc: Documento | None = None  # el de la pestaña elegida
+        self.abiertos: list[Documento] = []  # uno por pestaña, en el mismo orden
         self._resultados = []
         self._activo = -1
         self._texto_buscado = ""
@@ -291,10 +293,28 @@ class VentanaPrincipal(QMainWindow):
         derecha.addWidget(self.visor, 1)
         lay.addLayout(derecha, 1)
 
+        # Pestañas arriba, una por PDF abierto (como en Adobe)
+        self.pestanas = QTabBar()
+        self.pestanas.setObjectName("pestanas")
+        self.pestanas.setTabsClosable(True)
+        self.pestanas.setMovable(True)
+        self.pestanas.setDocumentMode(True)
+        self.pestanas.setExpanding(False)
+        self.pestanas.setElideMode(Qt.TextElideMode.ElideMiddle)
+        self.pestanas.currentChanged.connect(self._pestana_elegida)
+        self.pestanas.tabCloseRequested.connect(self.cerrar_pestana)
+        self.pestanas.tabMoved.connect(self._pestana_movida)
+        con_pestanas = QWidget()
+        columna = QVBoxLayout(con_pestanas)
+        columna.setContentsMargins(0, 0, 0, 0)
+        columna.setSpacing(0)
+        columna.addWidget(self.pestanas)
+        columna.addWidget(divisor, 1)
+
         self.bienvenida = Bienvenida(self)
         self.pila = QStackedWidget()
         self.pila.addWidget(self.bienvenida)
-        self.pila.addWidget(divisor)
+        self.pila.addWidget(con_pestanas)
         self.setCentralWidget(self.pila)
 
         self._crear_acciones()
@@ -383,6 +403,9 @@ class VentanaPrincipal(QMainWindow):
         )
         self.acc_buscar = self._accion("Buscar", "EditFind", S.Find, self._enfocar_busqueda, "Buscar (Ctrl+F)")
         self.acc_cerrar = self._accion("Cerrar", "WindowClose", S.Close, self.cerrar_documento, "Cerrar PDF (Ctrl+W)")
+        # Cambiar de pestaña como en el navegador
+        self._accion("Pestaña siguiente", None, QKeySequence("Ctrl+Tab"), lambda: self._pasar_pestana(1))
+        self._accion("Pestaña anterior", None, QKeySequence("Ctrl+Shift+Tab"), lambda: self._pasar_pestana(-1))
         self.acc_pantalla = self._accion("Pantalla completa", "ViewFullscreen", QKeySequence("F11"), self._pantalla_completa)
         self.acc_acerca = self._accion("Acerca de", "HelpAbout", [], self._acerca_de)
         for a, teclas in ((self.acc_siguiente, ["Ctrl+Right"]), (self.acc_anterior, ["Ctrl+Left"])):
@@ -492,6 +515,7 @@ class VentanaPrincipal(QMainWindow):
             self.acc_rehacer.setEnabled(self.doc.puede_rehacer)
             marca = "● " if self.doc.modificado else ""
             self.setWindowTitle(f"{marca}{self.doc.titulo} – PDF Casero {__version__}")
+            self._rotular_pestanas()
         else:
             self.acc_deshacer.setEnabled(False)
             self.acc_rehacer.setEnabled(False)
@@ -507,10 +531,10 @@ class VentanaPrincipal(QMainWindow):
     # --- Abrir y cerrar ---------------------------------------------------
     def abrir_dialogo(self):
         carpeta = self.ajustes.value("ultima_carpeta", str(Path.home()))
-        ruta, _ = QFileDialog.getOpenFileName(
+        rutas, _ = QFileDialog.getOpenFileNames(  # se pueden elegir varios: cada uno en su pestaña
             self, "Abrir", carpeta, "PDF y Word (*.pdf *.docx);;Documentos PDF (*.pdf);;Documentos de Word (*.docx);;Todos (*)"
         )
-        if ruta:
+        for ruta in rutas:
             self.abrir(ruta)
 
     def abrir(self, ruta: str) -> bool:
@@ -538,14 +562,19 @@ class VentanaPrincipal(QMainWindow):
         return self._mostrar_documento(doc, ruta)
 
     def _mostrar_documento(self, doc: Documento, ruta: str, reciente: bool = True) -> bool:
-        if not self.cerrar_documento():
+        """Abre el documento en una pestaña nueva (o va a la suya si ya estaba abierto)."""
+        ya = next((d for d in self.abiertos if reciente and not getattr(d, "nuevo", False) and d.ruta == doc.ruta), None)
+        if ya is not None:
             doc.cerrar()
-            return False
-        self.doc = doc
-        self._actualizar_estado()
-        self.visor.cargar(doc)
-        self._preparar_miniaturas()
-        self._mostrar_aviso()
+            self.pestanas.setCurrentIndex(self.abiertos.index(ya))
+            self.statusBar().showMessage(f"{ya.ruta.name} ya estaba abierto", 5000)
+            return True
+        self.abiertos.append(doc)
+        self.pestanas.blockSignals(True)
+        i = self.pestanas.addTab(doc.ruta.name)
+        self.pestanas.blockSignals(False)
+        self._activar(doc)
+        self.pestanas.setCurrentIndex(i)
         if reciente:
             self._anadir_reciente(ruta)
         self.ajustes.setValue("ultima_carpeta", str(Path(ruta).parent))
@@ -669,18 +698,80 @@ class VentanaPrincipal(QMainWindow):
             QMessageBox.critical(self, "No se pudo convertir", f"No se pudo convertir a Word.\n\n{detalle}")
         return estado == "ok"
 
-    def cerrar_documento(self) -> bool:
-        """Cierra el PDF. Devuelve False si el usuario cancela por tener cambios sin guardar."""
-        if not self._confirmar_cambios():
-            return False
+    def _activar(self, doc: Documento | None):
+        """Enseña `doc` en el visor, recordando por dónde iba el que se deja."""
+        if self.doc is not None and self.doc is not doc:
+            self.doc.vista = (self.visor.pagina_actual, self.visor.zoom, self.visor.ajustar_ancho)
+        for accion in (self.acc_editar, self.acc_dibujar, self.acc_formulario):
+            if accion.isChecked():
+                accion.setChecked(False)
+        self._poner_modo("leer")
         self._temporizador_mini.stop()
         self.miniaturas.clear()
-        self.visor.cargar(None)
         self._limpiar_busqueda()
-        if self.doc:
-            self.doc.cerrar()
-            self.doc = None
+        self._texto_buscado = ""
+        self.doc = doc
+        pagina, zoom, ancho = getattr(doc, "vista", (0, None, None)) if doc else (0, None, None)
+        if zoom is not None:
+            self.visor.ajustar_ancho = ancho
+            self.visor.zoom = zoom
+        self.visor.cargar(doc)
         self._actualizar_estado()
+        if doc is None:
+            return
+        self._preparar_miniaturas()
+        self._mostrar_aviso()
+        if zoom is not None:
+            self.etiqueta_zoom.setText(f"{round(zoom * 100)} %")
+        if pagina:
+            QTimer.singleShot(0, lambda: self.visor.ir_a_pagina(pagina))
+
+    def _pestana_elegida(self, i: int):
+        if 0 <= i < len(self.abiertos) and self.abiertos[i] is not self.doc:
+            self._activar(self.abiertos[i])
+
+    def _pasar_pestana(self, paso: int):
+        if len(self.abiertos) > 1:
+            self.pestanas.setCurrentIndex((self.pestanas.currentIndex() + paso) % len(self.abiertos))
+
+    def _pestana_movida(self, desde: int, hasta: int):
+        self.abiertos.insert(hasta, self.abiertos.pop(desde))
+
+    def _rotular_pestanas(self):
+        for i, d in enumerate(self.abiertos):
+            self.pestanas.setTabText(i, ("● " if d.modificado else "") + d.ruta.name)
+            self.pestanas.setTabToolTip(i, str(d.ruta))
+
+    def cerrar_pestana(self, i: int) -> bool:
+        """Cierra el PDF de esa pestaña. False si el usuario cancela por cambios sin guardar."""
+        if not 0 <= i < len(self.abiertos):
+            return True
+        if self.abiertos[i] is not self.doc:
+            self.pestanas.setCurrentIndex(i)  # que se vea cuál es antes de preguntar
+        if not self._confirmar_cambios():
+            return False
+        doc = self.abiertos.pop(i)
+        self.pestanas.blockSignals(True)
+        self.pestanas.removeTab(i)
+        self.pestanas.blockSignals(False)
+        siguiente = self.abiertos[min(i, len(self.abiertos) - 1)] if self.abiertos else None
+        self.doc = None  # el que se cierra no guarda vista
+        self._activar(siguiente)
+        if siguiente is not None:
+            self.pestanas.setCurrentIndex(self.abiertos.index(siguiente))
+        doc.cerrar()
+        return True
+
+    def cerrar_documento(self) -> bool:
+        """Cierra el PDF de la pestaña elegida (Ctrl+W)."""
+        if self.doc is None:
+            return True
+        return self.cerrar_pestana(self.abiertos.index(self.doc))
+
+    def cerrar_todos(self) -> bool:
+        while self.abiertos:
+            if not self.cerrar_pestana(len(self.abiertos) - 1):
+                return False
         return True
 
     # --- Guardar ----------------------------------------------------------
@@ -1300,11 +1391,10 @@ class VentanaPrincipal(QMainWindow):
     def dropEvent(self, e):
         for u in e.mimeData().urls():
             if u.toLocalFile().lower().endswith(ABRIBLES):
-                self.abrir(u.toLocalFile())
-                break
+                self.abrir(u.toLocalFile())  # cada uno en su pestaña
 
     def closeEvent(self, e):
-        if not self.cerrar_documento():
+        if not self.cerrar_todos():
             e.ignore()
             return
         self.ajustes.setValue("geometria", self.saveGeometry())

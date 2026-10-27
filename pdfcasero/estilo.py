@@ -48,5 +48,13 @@ QToolButton#botonPaginas {{
     padding: 6px; font-weight: 600; color: #2b2b2e;
 }}
 QToolButton#botonPaginas:hover {{ background: #e6e6ea; }}
+QTabBar#pestanas {{ background: #f0f0f3; border-bottom: 1px solid #dddde1; }}
+QTabBar#pestanas::tab {{
+    background: #e6e6ea; color: #44444a; padding: 6px 10px 6px 14px; margin: 4px 0 0 4px;
+    border: 1px solid #dddde1; border-bottom: none; border-top-left-radius: 6px; border-top-right-radius: 6px;
+    min-width: 90px; max-width: 260px;
+}}
+QTabBar#pestanas::tab:selected {{ background: #ffffff; color: #1d1d1f; border-top: 2px solid {ACENTO}; }}
+QTabBar#pestanas::tab:hover:!selected {{ background: #ededf1; }}
 QStatusBar {{ background: #ffffff; border-top: 1px solid #dddde1; color: #55555c; }}
 """

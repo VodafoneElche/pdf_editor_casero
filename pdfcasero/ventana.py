@@ -179,6 +179,8 @@ class Bienvenida(QWidget):
         lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         titulo = QLabel("PDF Casero")
         titulo.setObjectName("tituloBienvenida")
+        version = QLabel(f"Versión {__version__}")
+        version.setObjectName("textoBienvenida")
         texto = QLabel("Abre un PDF o arrástralo a esta ventana")
         texto.setObjectName("textoBienvenida")
         boton = QToolButton()
@@ -194,7 +196,7 @@ class Bienvenida(QWidget):
         self.lista.itemActivated.connect(lambda it: ventana.abrir(it.data(Qt.ItemDataRole.UserRole)))
         self.etiqueta_recientes = QLabel("Abiertos recientemente")
         self.etiqueta_recientes.setObjectName("textoBienvenida")
-        for w in (titulo, texto, boton, boton_google, self.etiqueta_recientes, self.lista):
+        for w in (titulo, version, texto, boton, boton_google, self.etiqueta_recientes, self.lista):
             lay.addWidget(w, 0, Qt.AlignmentFlag.AlignHCenter)
 
     def actualizar(self, recientes: list[str]):
@@ -245,7 +247,7 @@ class VentanaPrincipal(QMainWindow):
         self._activo = -1
         self._texto_buscado = ""
 
-        self.setWindowTitle("PDF Casero")
+        self.setWindowTitle(f"PDF Casero {__version__}")
         self.setAcceptDrops(True)
         self.resize(1200, 850)
 
@@ -489,7 +491,7 @@ class VentanaPrincipal(QMainWindow):
             self.acc_deshacer.setEnabled(self.doc.puede_deshacer)
             self.acc_rehacer.setEnabled(self.doc.puede_rehacer)
             marca = "● " if self.doc.modificado else ""
-            self.setWindowTitle(f"{marca}{self.doc.titulo} – PDF Casero")
+            self.setWindowTitle(f"{marca}{self.doc.titulo} – PDF Casero {__version__}")
         else:
             self.acc_deshacer.setEnabled(False)
             self.acc_rehacer.setEnabled(False)
@@ -499,7 +501,7 @@ class VentanaPrincipal(QMainWindow):
             self._poner_modo("leer")
             self.etiqueta_total.setText(" de 0 ")
             self.campo_pagina.setText("")
-            self.setWindowTitle("PDF Casero")
+            self.setWindowTitle(f"PDF Casero {__version__}")
             self.bienvenida.actualizar(self.recientes())
 
     # --- Abrir y cerrar ---------------------------------------------------

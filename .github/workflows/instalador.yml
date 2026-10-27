@@ -1,7 +1,7 @@
 name: Instalador
 
 # Construye el instalador para Windows y lo comprueba. Se puede descargar desde
-# la pestaña Actions (artefacto "PDFCasero-Instalador"). Al crear una etiqueta
+# la pestaña Actions (artefacto "PDFCasero-Instalador-<versión>"). Al crear una etiqueta
 # v1.2.3 se publica además como versión (Releases) del repositorio.
 on:
   push:
@@ -28,6 +28,9 @@ jobs:
         run: pip install -r requirements.txt pyinstaller
       - name: Idiomas del OCR
         run: python -c "from pathlib import Path; from pdfcasero.ocr import descargar_idiomas; print(descargar_idiomas(Path('packaging/tessdata')))"
+      - name: Número de compilación
+        shell: bash
+        run: echo 'COMPILACION = "${{ github.run_number }}"' > pdfcasero/_compilacion.py
       - name: Versión
         id: version
         shell: bash
@@ -76,7 +79,7 @@ jobs:
           "Instalación y desinstalación correctas"
       - uses: actions/upload-artifact@v4
         with:
-          name: PDFCasero-Instalador
+          name: PDFCasero-Instalador-${{ steps.version.outputs.valor }}
           path: packaging/salida/*.exe
           if-no-files-found: error
       - name: Publicar versión

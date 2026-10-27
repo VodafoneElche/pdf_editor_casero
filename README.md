@@ -46,8 +46,9 @@ Pulsa **Editar texto** (Ctrl+T) y:
 
 - **Cambiar una línea:** haz clic sobre ella, escribe y pulsa Intro. Se mantiene el tamaño, el color y un tipo de letra parecido.
 - **Borrar una línea:** haz clic, borra todo y pulsa Intro.
-- **Escribir texto nuevo:** haz clic en un hueco, escribe y pulsa Intro.
-- **Borrar palabras sueltas:** sin el modo de edición, selecciónalas con el ratón y pulsa Supr.
+- **Cambiar palabras que son parte de una imagen** (formularios impresos a PDF, escaneos sin "Hacer editable"): haz clic encima de la palabra; se tapa con el color del papel, sin borrar el subrayado, y se escribe la nueva en el mismo sitio.
+- **Escribir texto nuevo:** haz clic en un hueco, escribe y pulsa Intro. Si hay una raya para escribir (por ejemplo "Fdo.: ______"), el texto se apoya encima de ella.
+- **Borrar palabras sueltas:** sin el modo de edición, selecciónalas con el ratón y pulsa Supr. Con **Alt + arrastrar** se eligen solo las palabras que quedan dentro del recuadro.
 - **Deshacer / rehacer:** ↶ ↷ o Ctrl+Z / Ctrl+Y.
 
 Funciona también en PDF escaneados después de "Hacer editable": la línea original se tapa con el color del papel y se escribe encima con el color de la tinta.
@@ -71,7 +72,7 @@ Los dibujos se guardan como anotaciones PDF estándar, así que se ven en cualqu
 
 En la columna de miniaturas:
 
-- **Reordenar:** arrastra una miniatura arriba o abajo y suéltala donde quieras.
+- **Reordenar:** arrastra una miniatura arriba o abajo y suéltala donde quieras; una raya roja marca dónde quedará.
 - **Botón "Páginas"** (encima de las miniaturas, también con clic derecho o en "Más"):
   - Insertar una página en blanco antes o después de la actual (por ejemplo, para hacer un esquema con Dibujar).
   - Insertar las páginas de otro PDF o una imagen (foto, escaneo) después de la actual, como anexo.
@@ -107,6 +108,7 @@ Son campos de formulario PDF estándar: quien reciba el PDF los puede rellenar c
 | Deshacer / rehacer | Ctrl+Z / Ctrl+Y |
 | Borrar el texto seleccionado | Supr |
 | Copiar el texto seleccionado | Ctrl+C (Ctrl+A selecciona toda la página) |
+| Seleccionar solo el texto de un recuadro | Alt + arrastrar el ratón |
 | Buscar | Ctrl+F, después Intro o F3 (siguiente) y Mayús+F3 (anterior) |
 | Acercar / alejar | Ctrl + / Ctrl -, o Ctrl + rueda del ratón |
 | Ajustar al ancho / página completa (también en "Más") | Ctrl+0 / Ctrl+1 |

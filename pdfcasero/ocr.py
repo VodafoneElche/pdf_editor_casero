@@ -94,6 +94,9 @@ def insertar_capa_texto(pagina: pymupdf.Page, palabras: list[Palabra]) -> None:
     """
     if not palabras:
         return
+    from .edicion import preparar
+
+    preparar(pagina)
     fuente = pymupdf.Font("helv")
     escritor = pymupdf.TextWriter(pagina.rect)
     for x0, y0, x1, y1, texto in palabras:

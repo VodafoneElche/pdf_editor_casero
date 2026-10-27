@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QPoint, QRect, QSettings, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QImage, QIntValidator, QKeySequence, QPainter, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QImage, QIntValidator, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -88,24 +88,77 @@ class ListaMiniaturas(QListWidget):
         self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.setDropIndicatorShown(True)
+        self.setDropIndicatorShown(False)  # pintamos nuestra propia raya
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self._marca = None
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(lambda pos: self.menuPedido.emit(self.mapToGlobal(pos)))
 
+    FORMATO = "application/x-qabstractitemmodeldatalist"
+
+    def _antes_de(self, pos) -> int:
+        """Delante de qué página caería lo soltado en esa posición."""
+        destino = self.indexAt(pos)
+        if not destino.isValid():
+            # Por encima de la primera o por debajo de la última
+            if self.count() and pos.y() < self.visualRect(self.model().index(0, 0)).top():
+                return 0
+            return self.count()
+        rect = self.visualRect(destino)
+        return destino.row() + 1 if pos.y() > rect.center().y() else destino.row()
+
+    def _es_nuestro(self, e) -> bool:
+        return e.source() is self or e.mimeData().hasFormat(self.FORMATO)
+
+    def dragEnterEvent(self, e):
+        if self._es_nuestro(e):
+            e.setDropAction(Qt.DropAction.MoveAction)
+            e.accept()
+        else:
+            super().dragEnterEvent(e)
+
+    def dragMoveEvent(self, e):
+        # Qt solo deja soltar en el borde entre miniaturas; aceptamos en cualquier sitio
+        # y marcamos con una raya dónde quedará la página
+        if not self._es_nuestro(e):
+            return super().dragMoveEvent(e)
+        super().dragMoveEvent(e)  # desplaza la lista si se arrastra cerca del borde
+        e.setDropAction(Qt.DropAction.MoveAction)
+        e.accept()
+        self._marca = self._antes_de(e.position().toPoint())
+        self.viewport().update()
+
+    def dragLeaveEvent(self, e):
+        self._marca = None
+        self.viewport().update()
+        super().dragLeaveEvent(e)
+
     def dropEvent(self, e):
         # No dejamos que la lista mueva sus elementos: movemos la página en el PDF y la lista se rehace
+        self._marca = None
+        self.viewport().update()
+        if not self._es_nuestro(e):
+            return super().dropEvent(e)
         desde = self.currentRow()
-        destino = self.indexAt(e.position().toPoint())
-        if not destino.isValid():
-            antes_de = self.count()
-        else:
-            fila = destino.row()
-            rect = self.visualRect(destino)
-            antes_de = fila + 1 if e.position().y() > rect.center().y() else fila
+        antes_de = self._antes_de(e.position().toPoint())
         e.setDropAction(Qt.DropAction.IgnoreAction)
         e.accept()
         if desde >= 0:
             self.paginaSoltada.emit(desde, antes_de)
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        if getattr(self, "_marca", None) is None or not self.count():
+            return
+        if self._marca < self.count():
+            y = self.visualRect(self.model().index(self._marca, 0)).top() - 2
+        else:
+            y = self.visualRect(self.model().index(self.count() - 1, 0)).bottom() + 2
+        p = QPainter(self.viewport())
+        p.setPen(QPen(QColor("#c4302b"), 4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawLine(10, y, self.viewport().width() - 10, y)
+        p.end()
 
     def keyPressEvent(self, e):
         if e.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
@@ -297,8 +350,25 @@ class VentanaPrincipal(QMainWindow):
         barra.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.addToolBar(barra)
 
+        # Menú "Más" al principio, como en Acrobat: lo que se usa menos, para que la barra quepa
+        menu = QMenu(self)
+        for a in (self.acc_imprimir, self.acc_ancho, self.acc_completa, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
+            menu.addAction(a)
+        self.menu_paginas = self._crear_menu_paginas()
+        self.boton_paginas.setMenu(self.menu_paginas)
+        menu.insertMenu(menu.actions()[0], self.menu_paginas)
+        menu.insertSeparator(menu.actions()[1])
+        boton_mas = QToolButton()
+        boton_mas.setText("☰ Más")
+        boton_mas.setToolTip("Más opciones")
+        boton_mas.setMenu(menu)
+        boton_mas.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        barra.addWidget(boton_mas)
+        barra.addSeparator()
+
         barra.addAction(self.acc_abrir)
         barra.addAction(self.acc_guardar)
+        barra.addAction(self.acc_guardar_como)
         barra.addSeparator()
         barra.addAction(self.acc_ocr)
         barra.addAction(self.acc_editar)
@@ -345,21 +415,6 @@ class VentanaPrincipal(QMainWindow):
         barra.addAction(self.acc_res_ant)
         barra.addAction(self.acc_res_sig)
         self._acciones_doc += [self.acc_res_ant, self.acc_res_sig]
-        barra.addSeparator()
-        # Lo que se usa menos va en un menú para que la barra quepa en pantallas pequeñas
-        menu = QMenu(self)
-        for a in (self.acc_guardar_como, self.acc_imprimir, self.acc_ancho, self.acc_completa, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
-            menu.addAction(a)
-        self.menu_paginas = self._crear_menu_paginas()
-        self.boton_paginas.setMenu(self.menu_paginas)
-        menu.insertMenu(menu.actions()[0], self.menu_paginas)
-        menu.insertSeparator(menu.actions()[1])
-        boton_mas = QToolButton()
-        boton_mas.setText("Más")
-        boton_mas.setToolTip("Más opciones")
-        boton_mas.setMenu(menu)
-        boton_mas.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        barra.addWidget(boton_mas)
 
     def _actualizar_estado(self):
         hay = self.doc is not None

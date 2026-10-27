@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QGuiApplication, QImage, QKeySequence, QPainter, QWheelEvent
+from PySide6.QtGui import QAction, QColor, QGuiApplication, QImage, QKeySequence, QPainter, QPen, QWheelEvent
 from PySide6.QtWidgets import QInputDialog, QLineEdit, QMenu, QMessageBox, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from .documento import Documento, Resultado
@@ -50,6 +50,8 @@ class PaginaWidget(QWidget):
             self.visor.dibujo.soltar(self.indice, self._tupla(e))
         elif self._formulario:
             self.visor.formulario.soltar(self.indice, self._tupla(e))
+        else:
+            self.visor.terminar_seleccion()
 
     def mousePressEvent(self, e):
         if e.button() != Qt.MouseButton.LeftButton:
@@ -61,7 +63,8 @@ class PaginaWidget(QWidget):
         elif self.visor.modo_edicion:
             self.visor.editar_en(self, self._punto_pdf(e))
         elif not self.visor.rellenar_en(self, self._tupla(e)):
-            self.visor.empezar_seleccion(self.indice, self._punto_pdf(e))
+            recuadro = bool(e.modifiers() & Qt.KeyboardModifier.AltModifier)
+            self.visor.empezar_seleccion(self.indice, self._punto_pdf(e), recuadro)
 
     def mouseMoveEvent(self, e):
         p = self._punto_pdf(e)
@@ -118,6 +121,11 @@ class PaginaWidget(QWidget):
         azul = QColor(0, 110, 230, 80)
         for x0, y0, x1, y1 in self.visor.rects_seleccion(self.indice):
             p.fillRect(QRectF(x0 * escala, y0 * escala, (x1 - x0) * escala, (y1 - y0) * escala), azul)
+        caja = self.visor.caja_de(self.indice)
+        if caja is not None:
+            p.setPen(QPen(QColor(0, 110, 230), 1, Qt.PenStyle.DashLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(QRectF(caja.x() * escala, caja.y() * escala, caja.width() * escala, caja.height() * escala))
         for res, activo in self.visor.resaltados_de(self.indice):
             color = QColor(255, 140, 0, 120) if activo else QColor(255, 230, 0, 100)
             r = res.rect
@@ -188,7 +196,8 @@ class VisorPDF(QScrollArea):
         self._resultados: list[Resultado] = []
         self._activo = -1
         self._pagina_actual = 0
-        self._seleccion: tuple[int, int, int] | None = None  # página, palabra inicial, palabra final
+        self._seleccion: tuple[int, list[int]] | None = None  # página, índices de las palabras elegidas
+        self._caja: tuple[int, QPointF, QPointF] | None = None  # Alt + arrastrar: recuadro en curso
         self._ancla: int | None = None
         self._ancla_pagina = -1
 
@@ -229,7 +238,7 @@ class VisorPDF(QScrollArea):
         self._paginas.clear()
         self._cache.clear()
         self._resultados, self._activo = [], -1
-        self._seleccion = self._ancla = None
+        self._seleccion = self._ancla = self._caja = None
         self.dibujo.cancelar()
         self.formulario.cancelar()
         self.doc = doc
@@ -395,21 +404,53 @@ class VisorPDF(QScrollArea):
             return None
         return mejor
 
-    def empezar_seleccion(self, pagina: int, p: QPointF):
-        self._ancla = self.palabra_en(pagina, p)
+    def empezar_seleccion(self, pagina: int, p: QPointF, recuadro: bool = False):
+        """Clic para seleccionar texto. Con `recuadro` (tecla Alt) se elige solo lo de dentro de un rectángulo."""
         self._seleccion = None
         self._ancla_pagina = pagina
+        if recuadro:
+            self._ancla = None
+            self._caja = (pagina, p, p)
+        else:
+            self._ancla = self.palabra_en(pagina, p)
+            self._caja = None
         self._repintar()
 
     def extender_seleccion(self, pagina: int, p: QPointF):
-        if self._ancla is None or pagina != self._ancla_pagina:
+        if pagina != self._ancla_pagina:
+            return
+        if self._caja is not None:
+            inicio = self._caja[1]
+            self._caja = (pagina, inicio, p)
+            x0, x1 = sorted((inicio.x(), p.x()))
+            y0, y1 = sorted((inicio.y(), p.y()))
+            dentro = [
+                k
+                for k, w in enumerate(self.doc.palabras(pagina))
+                if x0 <= (w[0] + w[2]) / 2 <= x1 and y0 <= (w[1] + w[3]) / 2 <= y1
+            ]
+            self._seleccion = (pagina, dentro) if dentro else None
+            self._repintar()
+            return
+        if self._ancla is None:
             return
         fin = self.palabra_en(pagina, p)
         if fin is not None:
             self.fijar_seleccion(pagina, self._ancla, fin)
 
+    def terminar_seleccion(self):
+        if self._caja is not None:
+            self._caja = None
+            self._repintar()
+
+    def caja_de(self, pagina: int) -> QRectF | None:
+        """Recuadro de Alt + arrastrar que hay que dibujar en esa página (en puntos PDF)."""
+        if self._caja is None or self._caja[0] != pagina:
+            return None
+        return QRectF(self._caja[1], self._caja[2]).normalized()
+
     def fijar_seleccion(self, pagina: int, desde: int, hasta: int):
-        self._seleccion = (pagina, min(desde, hasta), max(desde, hasta))
+        self._seleccion = (pagina, list(range(min(desde, hasta), max(desde, hasta) + 1)))
         self._repintar()
 
     def seleccionar_pagina(self):
@@ -419,7 +460,7 @@ class VisorPDF(QScrollArea):
     def texto_seleccionado(self) -> str:
         if not self.doc or not self._seleccion:
             return ""
-        return self.doc.texto_entre(*self._seleccion)
+        return self.doc.texto_de_palabras(*self._seleccion)
 
     def copiar(self):
         texto = self.texto_seleccionado()
@@ -429,8 +470,8 @@ class VisorPDF(QScrollArea):
     def rects_seleccion(self, pagina: int):
         if not self.doc or not self._seleccion or self._seleccion[0] != pagina:
             return []
-        _, a, b = self._seleccion
-        return [w[:4] for w in self.doc.palabras(pagina)[a : b + 1]]
+        palabras = self.doc.palabras(pagina)
+        return [palabras[k][:4] for k in self._seleccion[1] if k < len(palabras)]
 
     def menu_contextual(self, posicion):
         menu = QMenu(self)
@@ -448,7 +489,7 @@ class VisorPDF(QScrollArea):
     def set_modo(self, modo: str):
         """'leer' (seleccionar texto y rellenar campos), 'editar' (texto), 'dibujar' o 'formulario'."""
         self.modo = modo
-        self._seleccion = self._ancla = None
+        self._seleccion = self._ancla = self._caja = None
         self.dibujo.cancelar()
         self.formulario.cancelar()
         self._repintar()
@@ -475,7 +516,11 @@ class VisorPDF(QScrollArea):
         if self.doc is None or self._editor is not None:
             return
         n, escala = pagina.indice, self.escala
-        linea = self.doc.linea_en(n, p.x(), p.y())
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        try:
+            linea = self.doc.linea_en(n, p.x(), p.y())
+        finally:
+            self.unsetCursor()
         if linea is not None:
             r = linea.rect
             rect = QRectF(r.x0 * escala, r.y0 * escala, r.width * escala, r.height * escala)
@@ -490,13 +535,14 @@ class VisorPDF(QScrollArea):
         else:
             tamano = TAMANO_TEXTO_NUEVO
             fuente_pdf = "helv"
-            rect = QRectF(p.x() * escala, p.y() * escala, 0, tamano * escala * 1.2)
+            x, y = self.doc.donde_escribir(n, p.x(), p.y(), tamano)
+            rect = QRectF(x * escala, y * escala, 0, tamano * escala)
             texto = ""
 
             def terminar(nuevo):
                 self._editor = None
                 if nuevo:
-                    self.doc.escribir(n, p.x(), p.y(), nuevo, tamano)
+                    self.doc.escribir(n, x, y, nuevo, tamano)
                     self.documento_cambiado()
 
         self._editor = EditorEnLinea(pagina, rect, texto, tamano * escala, terminar, fuente_pdf)
@@ -551,7 +597,7 @@ class VisorPDF(QScrollArea):
             return
         if self.doc is None or not self._seleccion:
             return
-        self.doc.borrar_palabras(*self._seleccion)
+        self.doc.borrar_palabras_elegidas(*self._seleccion)
         self.documento_cambiado()
 
     def documento_cambiado(self, conservar_dibujo: bool = False):
@@ -560,14 +606,14 @@ class VisorPDF(QScrollArea):
             self.dibujo.cancelar()
             self.formulario.cancelar()
         self._cache.clear()
-        self._seleccion = self._ancla = None
+        self._seleccion = self._ancla = self._caja = None
         self._resultados, self._activo = [], -1
         self._repintar()
         self.documentoEditado.emit()
 
     def texto_actualizado(self):
         """Tras el OCR: la imagen no cambia, pero sí el texto que se puede seleccionar."""
-        self._seleccion = self._ancla = None
+        self._seleccion = self._ancla = self._caja = None
         for w in self._paginas:
             w.update()
 

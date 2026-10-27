@@ -126,3 +126,42 @@ def test_escribir_deshacer_rehacer(pdf_texto):
     assert d.rehacer() and d.buscar("llevar pan")
     d.escribir(0, 72, 250, "otra")
     assert not d.puede_rehacer  # un cambio nuevo borra lo que se podía rehacer
+
+
+def _formulario_impreso(ruta):
+    """Como un PDF de "Imprimir a PDF": la página es una imagen y el contenido cambia las coordenadas."""
+    origen = pymupdf.open()
+    p = origen.new_page(width=600, height=300)
+    p.insert_text((50, 100), "Mes:", fontsize=11)
+    p.insert_text((100, 98), "JULIO", fontsize=10)
+    p.draw_line((95, 101), (300, 101), width=0.8)
+    p.insert_text((50, 200), "Fdo.:", fontsize=11)
+    p.draw_line((95, 202), (400, 202), width=0.8)
+    foto = p.get_pixmap(dpi=200)
+    doc = pymupdf.open()
+    pagina = doc.new_page(width=600, height=300)
+    pagina.insert_image(pagina.rect, pixmap=foto)
+    # Cambio de coordenadas sin cerrar (volteado), como hace Microsoft Print to PDF
+    xref = pagina.get_contents()[0]
+    doc.update_stream(xref, b"1 0 0 -1 0 300 cm\nq\n600 0 0 -300 0 300 cm\n/fzImg0 Do\nQ\n")
+    doc.save(ruta)
+
+
+def test_cambiar_palabra_de_imagen_y_firmar_sobre_la_raya(tmp_path):
+    ruta = tmp_path / "impreso.pdf"
+    _formulario_impreso(ruta)
+    d = Documento(str(ruta))
+    linea = d.linea_en(0, 115, 95)
+    assert linea is not None and linea.exacta
+    assert 98 <= linea.rect.x0 <= 102 and 96.5 <= linea.rect.y1 <= 99.5  # sin bajar al subrayado
+    d.cambiar_linea(0, linea, "agosto")
+    x, y = d.donde_escribir(0, 200, 196, 12)
+    assert 186 <= y + 12 * 0.8 <= 201  # la línea base queda justo encima de la raya
+    d.escribir(0, x, y, "Jose", 12)
+    pagina = d._doc[0]
+    palabras = {w[4]: w for w in pagina.get_text("words")}
+    assert palabras["agosto"][1] > 80 and palabras["agosto"][3] < 103  # en su sitio, no volteado
+    assert 180 < palabras["Jose"][1] and palabras["Jose"][3] < 205
+    # El subrayado sigue ahí debajo de "agosto"
+    pix = pagina.get_pixmap(clip=pymupdf.Rect(150, 100.6, 151, 101.4), dpi=144, colorspace=pymupdf.csGRAY)
+    assert min(pix.samples) < 120

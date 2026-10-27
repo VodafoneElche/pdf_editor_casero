@@ -83,8 +83,13 @@ class Documento:
 
     def texto_entre(self, n: int, desde: int, hasta: int) -> str:
         """Texto de las palabras desde..hasta (incluidas), respetando saltos de línea."""
+        return self.texto_de_palabras(n, range(desde, hasta + 1))
+
+    def texto_de_palabras(self, n: int, indices) -> str:
+        """Texto de esas palabras (por su número), en orden y respetando saltos de línea."""
+        palabras = self.palabras(n)
         partes, anterior = [], None
-        for w in self.palabras(n)[desde : hasta + 1]:
+        for w in (palabras[k] for k in sorted(indices) if k < len(palabras)):
             linea = (w[5], w[6])
             if anterior is not None:
                 partes.append(" " if linea == anterior else "\n")
@@ -122,7 +127,20 @@ class Documento:
         self._antes_de_cambiar()
 
     def linea_en(self, n: int, x: float, y: float):
-        return edicion.linea_en(self._doc[n], pymupdf.Point(x, y))
+        """Línea de texto bajo el punto; si no hay, letras de una imagen (formularios impresos, escaneos)."""
+        punto = pymupdf.Point(x, y)
+        return edicion.linea_en(self._doc[n], punto) or edicion.linea_de_imagen(self._doc[n], punto)
+
+    def donde_escribir(self, n: int, x: float, y: float, tamano: float) -> tuple[float, float]:
+        """Esquina superior izquierda del texto nuevo para un clic en (x, y).
+
+        Si hay un renglón (una raya, como en "Fdo.: ____") justo debajo, el texto
+        se apoya encima; si no, queda centrado en altura sobre el clic.
+        """
+        renglon = edicion.renglon_cercano(self._doc[n], pymupdf.Point(x, y))
+        if renglon is not None:
+            return x, renglon - 1.5 - tamano * 0.8
+        return x, y - tamano * 0.55
 
     def cambiar_linea(self, n: int, linea, texto_nuevo: str) -> None:
         self._antes_de_cambiar()
@@ -130,7 +148,11 @@ class Documento:
         self._despues_de_cambiar(n)
 
     def borrar_palabras(self, n: int, desde: int, hasta: int) -> None:
-        palabras = self.palabras(n)[desde : hasta + 1]
+        self.borrar_palabras_elegidas(n, range(desde, hasta + 1))
+
+    def borrar_palabras_elegidas(self, n: int, indices) -> None:
+        todas = self.palabras(n)
+        palabras = [todas[k] for k in sorted(indices) if k < len(todas)]
         if not palabras:
             return
         rects = [pymupdf.Rect(w[:4]) for w in palabras]

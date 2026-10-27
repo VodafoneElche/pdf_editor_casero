@@ -205,9 +205,14 @@ class ControlGoogle:
         v = self.ventana
         if not v.doc or not self._asegurar_conexion():
             return
+        paginas = v.elegir_paginas_word()
+        if paginas is False:
+            return
         nombre = v.doc.ruta.stem
+        if paginas:
+            nombre += f" (página {paginas[0] + 1})"
         docx = Path(tempfile.mkdtemp(prefix="pdfcasero_")) / f"{nombre}.docx"
-        if not v.convertir_a_docx(str(docx)):
+        if not v.convertir_a_docx(str(docx), paginas):
             return
         subido = self._con_cuenta(
             "Enviar a Google Docs", f"Subiendo «{nombre}» a tu Google Drive…", self.cuenta.subir_como_doc, str(docx), nombre

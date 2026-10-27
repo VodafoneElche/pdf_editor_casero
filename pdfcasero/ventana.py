@@ -575,7 +575,10 @@ class VentanaPrincipal(QMainWindow):
             return
         if not ruta.lower().endswith(".docx"):
             ruta += ".docx"
-        if self.convertir_a_docx(ruta):
+        paginas = self.elegir_paginas_word()
+        if paginas is False:
+            return
+        if self.convertir_a_docx(ruta, paginas):
             QMessageBox.information(
                 self,
                 "Guardado en Word",
@@ -583,13 +586,41 @@ class VentanaPrincipal(QMainWindow):
                 "«Google → Enviar a Google Docs», que lo sube y lo trae de vuelta como PDF.",
             )
 
-    def convertir_a_docx(self, ruta: str) -> bool:
-        """Convierte el PDF abierto en el .docx `ruta`, con aviso de espera y Cancelar."""
-        dialogo = QProgressDialog("Convirtiendo a Word… (en PDF largos puede tardar unos minutos)", "Cancelar", 0, 0, self)
+    def elegir_paginas_word(self):
+        """En PDF largos pregunta si pasar solo la página que se ve o todas.
+
+        Devuelve la lista de páginas (None = todas) o False si se cancela.
+        """
+        total = self.doc.num_paginas
+        if total <= 3:
+            return None
+        actual = self.visor.pagina_actual
+        caja = QMessageBox(self)
+        caja.setWindowTitle("¿Qué páginas?")
+        caja.setText(
+            f"Este PDF tiene {total} páginas. Convertir cada página lleva unos segundos, "
+            f"así que todas pueden tardar varios minutos."
+        )
+        solo = caja.addButton(f"Solo la página {actual + 1}", QMessageBox.ButtonRole.AcceptRole)
+        todas = caja.addButton(f"Las {total} páginas", QMessageBox.ButtonRole.AcceptRole)
+        caja.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+        caja.setDefaultButton(solo)
+        caja.exec()
+        if caja.clickedButton() is solo:
+            return [actual]
+        if caja.clickedButton() is todas:
+            return None
+        return False
+
+    def convertir_a_docx(self, ruta: str, paginas: list[int] | None = None) -> bool:
+        """Convierte el PDF abierto (o esas páginas) en el .docx `ruta`, con avance y Cancelar."""
+        total = len(paginas) if paginas else self.doc.num_paginas
+        dialogo = QProgressDialog("Preparando la conversión…", "Cancelar", 0, 2 * total, self)
         dialogo.setWindowTitle("Convirtiendo")
         dialogo.setWindowModality(Qt.WindowModality.WindowModal)
         dialogo.setMinimumDuration(0)
-        trabajo = conversion.ExportacionWord(self.doc.copia_en_memoria(), ruta)
+        dialogo.setValue(0)
+        trabajo = conversion.ExportacionWord(self.doc.copia_en_memoria(), ruta, paginas)
         bucle = QEventLoop()
         final = {}
 
@@ -600,6 +631,12 @@ class VentanaPrincipal(QMainWindow):
                 bucle.quit()
                 return
             r = trabajo.resultado()
+            if trabajo.avance:
+                fase, i, n = trabajo.avance
+                accion = "Analizando" if fase == 1 else "Creando"
+                dialogo.setLabelText(f"{accion} la página {i} de {n}…")
+                dialogo.setMaximum(2 * n)
+                dialogo.setValue((fase - 1) * n + i - 1)
             if r is not None:
                 final["r"] = r
                 bucle.quit()

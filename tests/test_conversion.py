@@ -73,3 +73,32 @@ def test_sin_tablas_cada_linea_en_una_fila(tmp_path):
     destino = tmp_path / "texto.xlsx"
     assert pdf_a_excel(doc.tobytes(), str(destino)) == 0
     assert [f[0] for f in load_workbook(destino)["Página 1"].iter_rows(values_only=True)] == ["Hola", "Adiós"]
+
+
+def test_preparar_para_word_texto_girado_como_imagen_y_fuentes(tmp_path):
+    import zipfile
+
+    from pdfcasero.conversion import _clave_fuente, pdf_a_word, preparar_para_word
+
+    assert _clave_fuente("ABCDEF+VodafoneRg-Bold") == _clave_fuente("Vodafone Rg") == "vodafonerg"
+    doc = pymupdf.open()
+    pagina = doc.new_page()
+    pagina.insert_text((72, 100), "Factura de prueba con texto normal", fontname="cour", fontsize=11)
+    pagina.insert_text((30, 700), "Texto vertical del margen", fontsize=8, rotate=90)
+    datos, fuentes = preparar_para_word(doc.tobytes())
+    preparada = pymupdf.open(stream=datos, filetype="pdf")[0]
+    texto = preparada.get_text()
+    assert "Factura de prueba" in texto and "vertical" not in texto  # el girado ahora es imagen
+    assert len(preparada.get_images()) == 1
+    # Courier es poco común en los PDF: se cambia por Courier New con su tamaño
+    assert fuentes["courier"][0] == "Courier New" and 0.6 <= fuentes["courier"][1] <= 1.0
+
+    origen = tmp_path / "prueba.pdf"
+    doc.save(origen)
+    destino = tmp_path / "prueba.docx"
+    avances = []
+    pdf_a_word(str(origen), str(destino), paginas=[0], aviso=lambda *a: avances.append(a))
+    xml = zipfile.ZipFile(destino).read("word/document.xml").decode()
+    assert "Factura de prueba" in xml and 'w:ascii="Courier New"' in xml
+    assert 'w:lineRule="exact"' not in xml
+    assert (1, 1, 1) in avances and (2, 1, 1) in avances

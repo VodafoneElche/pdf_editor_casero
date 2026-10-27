@@ -363,6 +363,14 @@ class VentanaPrincipal(QMainWindow):
         self.acc_acercar = self._accion(
             "+", None, [QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")], self.visor.acercar, "Acercar (Ctrl +)"
         )
+        self.acc_girar_izq = self._accion(
+            "↺", None, QKeySequence("Ctrl+Shift+-"), lambda: self.girar_pagina(-90),
+            "Girar la página a la izquierda (Ctrl+Mayús+-)",
+        )
+        self.acc_girar_der = self._accion(
+            "↻", None, [QKeySequence("Ctrl+Shift++"), QKeySequence("Ctrl+Shift+=")], lambda: self.girar_pagina(90),
+            "Girar la página a la derecha (Ctrl+Mayús++)",
+        )
         self.acc_ancho = self._accion(
             "Ajustar al ancho", "ZoomFitBest", QKeySequence("Ctrl+0"), self.visor.zoom_ajustar_ancho,
             "Ajustar al ancho de la ventana (Ctrl+0)",
@@ -378,7 +386,7 @@ class VentanaPrincipal(QMainWindow):
         for a, teclas in ((self.acc_siguiente, ["Ctrl+Right"]), (self.acc_anterior, ["Ctrl+Left"])):
             a.setShortcuts([QKeySequence(t) for t in teclas])
         self._acciones_doc = [
-            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_formulario, self.acc_word, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
+            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_formulario, self.acc_word, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar, self.acc_girar_izq, self.acc_girar_der,
             self.acc_ancho, self.acc_completa, self.acc_buscar, self.acc_cerrar,
         ]
 
@@ -436,6 +444,8 @@ class VentanaPrincipal(QMainWindow):
         self.etiqueta_zoom.setAlignment(Qt.AlignmentFlag.AlignCenter)
         barra.addWidget(self.etiqueta_zoom)
         barra.addAction(self.acc_acercar)
+        barra.addAction(self.acc_girar_izq)
+        barra.addAction(self.acc_girar_der)
 
         espacio = QWidget()
         espacio.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)

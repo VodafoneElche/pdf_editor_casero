@@ -116,6 +116,7 @@ Botón **Google** de la barra:
 | Editar texto | Ctrl+T |
 | Dibujar | Ctrl+D |
 | Guardar copia en Word | Ctrl+Mayús+W |
+| Girar la página a la izquierda / derecha | Ctrl+Mayús+- / Ctrl+Mayús++ (o los botones ↺ ↻ junto al zoom) |
 | Deshacer / rehacer | Ctrl+Z / Ctrl+Y |
 | Borrar el texto seleccionado | Supr |
 | Mover la página con la mano | Arrastrar fuera del texto, o con la rueda del ratón pulsada |

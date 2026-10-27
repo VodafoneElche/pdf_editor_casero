@@ -6,10 +6,12 @@ No hace falta instalar Tesseract aparte: solo los archivos de idioma
 
 from __future__ import annotations
 
+import multiprocessing
 import os
 import sys
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
 
 import pymupdf
@@ -84,6 +86,54 @@ def reconocer_pagina(pagina: pymupdf.Page, tessdata: Path, idiomas=IDIOMAS, dpi:
     """Pasa el OCR a una página y devuelve sus palabras con su posición."""
     tp = pagina.get_textpage_ocr(dpi=dpi, full=True, language="+".join(idiomas), tessdata=str(tessdata))
     return [(w[0], w[1], w[2], w[3], w[4]) for w in pagina.get_text("words", textpage=tp, sort=True) if w[4].strip()]
+
+
+# --- Varias páginas a la vez, en procesos aparte -------------------------------
+# PyMuPDF no suelta el "candado" de Python mientras hace el OCR, así que en un
+# hilo normal congelaba la ventana. En procesos aparte la ventana sigue viva y,
+# además, se reconocen varias páginas a la vez (una por núcleo del procesador).
+_doc_del_proceso = None
+
+
+def _iniciar_proceso(datos_pdf: bytes) -> None:
+    global _doc_del_proceso
+    _doc_del_proceso = pymupdf.open(stream=datos_pdf, filetype="pdf")
+
+
+def _reconocer_en_proceso(n: int, tessdata: str) -> tuple[int, list[Palabra]]:
+    return n, reconocer_pagina(_doc_del_proceso[n], Path(tessdata))
+
+
+def procesos_recomendados() -> int:
+    """Uno por núcleo, dejando uno libre para la ventana, y como mucho 4 (cada uno usa memoria)."""
+    return max(1, min(4, (os.cpu_count() or 2) - 1))
+
+
+def reconocer_paginas(
+    datos_pdf: bytes,
+    paginas: list[int],
+    tessdata: Path,
+    procesos: int | None = None,
+    cancelado: Callable[[], bool] = lambda: False,
+) -> Iterator[tuple[int, list[Palabra]]]:
+    """Reconoce esas páginas en paralelo y va devolviendo (página, palabras) según terminan."""
+    procesos = min(procesos or procesos_recomendados(), len(paginas)) or 1
+    pool = ProcessPoolExecutor(
+        max_workers=procesos,
+        mp_context=multiprocessing.get_context("spawn"),
+        initializer=_iniciar_proceso,
+        initargs=(datos_pdf,),
+    )
+    try:
+        pendientes = {pool.submit(_reconocer_en_proceso, n, str(tessdata)) for n in paginas}
+        while pendientes:
+            hechas, pendientes = wait(pendientes, timeout=0.3, return_when=FIRST_COMPLETED)
+            for futuro in hechas:
+                yield futuro.result()
+            if cancelado():
+                break
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def insertar_capa_texto(pagina: pymupdf.Page, palabras: list[Palabra]) -> None:

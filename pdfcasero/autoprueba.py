@@ -26,10 +26,14 @@ def _ocr_funciona() -> str:
     escaneo = pymupdf.open()
     pagina = escaneo.new_page()
     pagina.insert_image(pagina.rect, pixmap=foto)
-    texto = " ".join(p[4] for p in ocr.reconocer_pagina(pagina, tessdata))
-    if "mundo" not in texto.lower():
-        raise RuntimeError(f"El OCR no ha leído bien: {texto!r}")
-    return f"OCR ok ({tessdata}): {texto}"
+    escaneo.new_page().insert_image(pymupdf.Rect(0, 0, 595, 842), pixmap=foto)
+    # Igual que "Hacer editable": dos páginas a la vez en procesos aparte
+    leidas = dict(ocr.reconocer_paginas(escaneo.tobytes(), [0, 1], tessdata, procesos=2))
+    textos = [" ".join(p[4] for p in leidas.get(n, [])) for n in (0, 1)]
+    for texto in textos:
+        if "mundo" not in texto.lower():
+            raise RuntimeError(f"El OCR no ha leído bien: {texto!r}")
+    return f"OCR ok ({tessdata}), 2 procesos: {textos[0]}"
 
 
 def ejecutar(salida: str) -> int:

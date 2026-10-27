@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pymupdf
 from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog, QWidget
 
@@ -25,16 +24,23 @@ class HiloOCR(QThread):
         self.cancelado = False
 
     def run(self):
+        # El trabajo de verdad se hace en otros procesos: este hilo solo espera y avisa
         try:
-            doc = pymupdf.open(stream=self.datos_pdf, filetype="pdf")
-            for k, n in enumerate(self.paginas):
-                if self.cancelado:
-                    break
-                self.avance.emit(k, len(self.paginas))
-                self.paginaLista.emit(n, ocr.reconocer_pagina(doc[n], self.tessdata))
-            doc.close()
+            total = len(self.paginas)
+            self.avance.emit(0, total)
+            resultados = ocr.reconocer_paginas(
+                self.datos_pdf, self.paginas, self.tessdata, cancelado=lambda: self.cancelado
+            )
+            try:
+                for k, (n, palabras) in enumerate(resultados, start=1):
+                    if self.cancelado:
+                        break
+                    self.paginaLista.emit(n, palabras)
+                    self.avance.emit(k, total)
+            finally:
+                resultados.close()  # para los procesos aunque se cancele a medias
         except Exception as e:  # el aviso lo muestra la ventana
-            self.fallo.emit(str(e))
+            self.fallo.emit(str(e) or type(e).__name__)
 
 
 def asegurar_idiomas(padre: QWidget):
@@ -79,12 +85,17 @@ def elegir_paginas(padre: QWidget, doc: Documento) -> list[int] | None:
     sin_texto = doc.paginas_sin_texto()
     if sin_texto:
         return sin_texto
-    r = QMessageBox.question(
-        padre,
-        "Ya tiene texto",
-        "Todas las páginas de este PDF ya tienen texto que se puede buscar y copiar.\n\n"
-        "¿Quieres pasar el reconocimiento igualmente? Puede duplicar el texto.",
-        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        QMessageBox.StandardButton.No,
+    caja = QMessageBox(padre)
+    caja.setIcon(QMessageBox.Icon.Information)
+    caja.setWindowTitle("Ya es editable")
+    caja.setText("Este PDF ya es editable.")
+    caja.setInformativeText(
+        "Todas sus páginas tienen texto de verdad: se puede buscar, copiar y cambiar con «Editar texto». "
+        "No hace falta «Hacer editable».\n\n"
+        f"Reconocerlo igualmente tardaría varios minutos ({doc.num_paginas} páginas) y puede duplicar el texto."
     )
-    return list(range(doc.num_paginas)) if r == QMessageBox.StandardButton.Yes else None
+    entendido = caja.addButton("Entendido", QMessageBox.ButtonRole.AcceptRole)
+    igualmente = caja.addButton("Reconocer igualmente", QMessageBox.ButtonRole.DestructiveRole)
+    caja.setDefaultButton(entendido)
+    caja.exec()
+    return list(range(doc.num_paginas)) if caja.clickedButton() is igualmente else None

@@ -1010,7 +1010,7 @@ class VentanaPrincipal(QMainWindow):
             dialogo.setValue(len(hechas))
 
         def avance(k, total):
-            dialogo.setLabelText(f"Reconociendo el texto… página {paginas[k] + 1} ({k + 1} de {total})")
+            dialogo.setLabelText(f"Reconociendo el texto… {k} de {total} páginas (varias a la vez)")
 
         hilo.paginaLista.connect(pagina_lista)
         hilo.avance.connect(avance)

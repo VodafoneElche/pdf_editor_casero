@@ -36,6 +36,33 @@ def _ocr_funciona() -> str:
     return f"OCR ok ({tessdata}), 2 procesos: {textos[0]}"
 
 
+def _word_funciona() -> str:
+    """Exportar a Word en un proceso aparte (como en la ventana) e importar el .docx de vuelta."""
+    import tempfile
+    import time
+    from pathlib import Path
+
+    from . import conversion
+
+    carpeta = Path(tempfile.mkdtemp())
+    doc = pymupdf.open()
+    doc.new_page().insert_htmlbox(pymupdf.Rect(72, 72, 500, 200), "<p>Factura de prueba: 25 € al mes</p>")
+    destino = carpeta / "prueba.docx"
+    trabajo = conversion.ExportacionWord(doc.tobytes(), str(destino))
+    limite, resultado = time.time() + 180, None
+    while resultado is None and time.time() < limite:
+        time.sleep(0.3)
+        resultado = trabajo.resultado()
+    if resultado != ("ok", str(destino)):
+        raise RuntimeError(f"Exportar a Word ha fallado: {resultado}")
+    vuelta = carpeta / "vuelta.pdf"
+    metodo = conversion.word_a_pdf(str(destino), str(vuelta))
+    texto = pymupdf.open(vuelta)[0].get_text()
+    if "25 €" not in texto:
+        raise RuntimeError(f"Importar Word ha fallado ({metodo}): {texto!r}")
+    return f"Word ok (exportar con pdf2docx, importar con {metodo})"
+
+
 def ejecutar(salida: str) -> int:
     lineas, codigo = [], 0
     try:
@@ -51,6 +78,7 @@ def ejecutar(salida: str) -> int:
         app.exec()
         lineas.append("Ventana ok")
         lineas.append(_ocr_funciona())
+        lineas.append(_word_funciona())
     except Exception:
         lineas.append(traceback.format_exc())
         codigo = 1

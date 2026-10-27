@@ -13,7 +13,8 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | 3. Editar texto | Cambiar, borrar y escribir texto dentro del PDF, con deshacer | Hecho |
 | 4. Dibujo y esquemas | Flechas, globos, líneas, formas, texto y lápiz, editables después | Hecho |
 | 5. Organizar páginas | Añadir (en blanco, de otro PDF o una imagen), quitar, girar, duplicar y reordenar arrastrando | Hecho |
-| 6. Formularios | Crear casillas rellenables y rellenar formularios recibidos | Hecho |
+| 6. Formularios | Rellenar formularios recibidos (crear formularios se quitó a petición de Jose) | Hecho |
+| Extra | Exportar a Word (.docx) para Google Docs e importar .docx como PDF | Hecho |
 | 7. Instalador | Un único `.exe` con todo incluido | Hecho |
 
 ## Instalar en Windows
@@ -81,18 +82,14 @@ En la columna de miniaturas:
 
 Todo se puede deshacer con Ctrl+Z.
 
-## Formularios rellenables
+## Formularios recibidos
 
-**Crear un formulario** (para que quien lo reciba escriba en las casillas): pulsa **Formulario** y elige en la segunda barra:
+Si te llega un PDF con casillas para rellenar, haz clic en un campo de texto para escribir (Intro acepta) o en una casilla para marcarla o desmarcarla. Después guarda.
 
-- **Campo de texto:** arrastra donde irá una respuesta corta (nombre, fecha…). Un clic sin arrastrar crea uno de tamaño normal.
-- **Texto largo:** arrastra una zona de varias líneas (observaciones…).
-- **Casilla:** haz clic donde irá una casilla para marcar ✓.
-- **Seleccionar:** mueve un campo arrastrándolo, cambia su tamaño con el cuadradito de la esquina, doble clic para cambiarle el nombre y Supr para borrarlo.
+## Word y Google Docs
 
-Son campos de formulario PDF estándar: quien reciba el PDF los puede rellenar con Adobe Reader, Edge, Chrome o el móvil.
-
-**Rellenar un formulario** (uno recibido o uno propio): fuera de los modos de edición, haz clic en un campo de texto para escribir (Intro acepta) o en una casilla para marcarla o desmarcarla. Después guarda.
+- **Exportar a Word:** guarda una copia en `.docx`. Para editarla en Google: súbela a Google Drive, clic derecho y **Abrir con → Documentos de Google**. Funciona muy bien con PDF de texto (facturas, cartas); con formularios impresos como imagen el resultado es más pobre.
+- **Abrir un Word:** en **Abrir** elige un `.docx` (por ejemplo, el que descargas de Google Docs con **Archivo → Descargar → Word**). Se convierte en PDF y al pulsar **Guardar** se guarda como PDF. Si el ordenador tiene Microsoft Word, la conversión la hace Word y queda idéntica; si no, el diseño puede variar un poco.
 
 ## Atajos de teclado
 
@@ -104,9 +101,10 @@ Son campos de formulario PDF estándar: quien reciba el PDF los puede rellenar c
 | Hacer editable (OCR) | Ctrl+E |
 | Editar texto | Ctrl+T |
 | Dibujar | Ctrl+D |
-| Formulario (crear campos) | Ctrl+Mayús+F |
+| Exportar a Word | Ctrl+Mayús+W |
 | Deshacer / rehacer | Ctrl+Z / Ctrl+Y |
 | Borrar el texto seleccionado | Supr |
+| Mover la página con la mano | Arrastrar fuera del texto, o con la rueda del ratón pulsada |
 | Copiar el texto seleccionado | Ctrl+C (Ctrl+A selecciona toda la página) |
 | Seleccionar solo el texto de un recuadro | Alt + arrastrar el ratón |
 | Buscar | Ctrl+F, después Intro o F3 (siguiente) y Mayús+F3 (anterior) |
@@ -135,7 +133,8 @@ Estructura:
 - `pdfcasero/edicion.py`: cambiar, borrar y escribir texto en la página.
 - `pdfcasero/dibujo.py`: los dibujos como anotaciones PDF, con su receta para poder retocarlos.
 - `pdfcasero/herramientas_dibujo.py`: ratón y teclado del modo Dibujo.
-- `pdfcasero/formularios.py` y `herramientas_formulario.py`: campos rellenables y el modo Formulario.
+- `pdfcasero/formularios.py` y `herramientas_formulario.py`: campos rellenables.
+- `pdfcasero/conversion.py`: PDF a Word (pdf2docx) y Word a PDF (Microsoft Word si está, si no mammoth).
 - `pdfcasero/impresion.py`: impresión.
 - `pdfcasero/autoprueba.py`: comprobación del programa ya empaquetado (`PDFCasero.exe --autoprueba resultado.txt`).
 - `packaging/`: receta de PyInstaller (`pdfcasero.spec`), instalador de Inno Setup (`instalador.iss`) e icono.
@@ -156,4 +155,4 @@ El instalador queda en `packaging\salida\`. Hace falta [Inno Setup 6](https://jr
 
 ## Licencias
 
-PyMuPDF se distribuye con licencia AGPL y PySide6 con LGPL. Para un uso privado en casa no hay ninguna restricción.
+PyMuPDF se distribuye con licencia AGPL, PySide6 con LGPL y pdf2docx con GPL. Para un uso privado en casa no hay ninguna restricción.

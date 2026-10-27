@@ -34,6 +34,7 @@ class Documento:
                 raise ContrasenaNecesaria(str(self.ruta))
         self._contrasena = contrasena
         self.modificado = False  # lo activan el OCR y la edición de texto
+        self.nuevo = False  # True si viene de un Word convertido y aún no tiene PDF propio
         self._palabras: dict[int, list] = {}
         self._deshacer: list[bytes] = []
         self._rehacer: list[bytes] = []
@@ -145,6 +146,7 @@ class Documento:
     def cambiar_linea(self, n: int, linea, texto_nuevo: str) -> None:
         self._antes_de_cambiar()
         edicion.reemplazar_linea(self._doc[n], linea, texto_nuevo)
+        self._fuentes_nuevas = True
         self._despues_de_cambiar(n)
 
     def borrar_palabras(self, n: int, desde: int, hasta: int) -> None:
@@ -166,6 +168,7 @@ class Documento:
             return
         self._antes_de_cambiar()
         edicion.escribir(self._doc[n], pymupdf.Point(x, y), texto, tamano)
+        self._fuentes_nuevas = True
         self._despues_de_cambiar(n)
 
     # --- Organizar páginas ---------------------------------------------------
@@ -339,6 +342,13 @@ class Documento:
         mismo = destino.resolve() == self.ruta.resolve()
         fd, tmp = tempfile.mkstemp(suffix=".pdf", dir=destino.parent)
         os.close(fd)
+        if getattr(self, "_fuentes_nuevas", False):
+            # Las fuentes añadidas al editar (Arial, la del PDF…) se guardan solo con las letras usadas
+            try:
+                self._doc.subset_fonts()
+            except Exception:
+                pass
+            self._fuentes_nuevas = False
         try:
             self._doc.save(tmp, garbage=3, deflate=True)
             if mismo:

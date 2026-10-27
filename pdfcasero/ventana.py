@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__
+from . import conversion
 from .dialogo_ocr import HiloOCR, asegurar_idiomas, elegir_paginas
 from .documento import ContrasenaNecesaria, Documento
 from .impresion import imprimir
@@ -203,6 +204,34 @@ class Bienvenida(QWidget):
         self.etiqueta_recientes.setVisible(bool(recientes))
 
 
+ABRIBLES = (".pdf",) + conversion.EXTENSIONES_WORD
+
+
+def en_segundo_plano(funcion, *args):
+    """Ejecuta `funcion` en otro hilo sin congelar la ventana y devuelve su resultado (o lanza su error)."""
+    import threading
+
+    resultado = {}
+
+    def trabajo():
+        try:
+            resultado["valor"] = funcion(*args)
+        except Exception as e:
+            resultado["error"] = e
+
+    hilo = threading.Thread(target=trabajo, daemon=True)
+    hilo.start()
+    bucle = QEventLoop()
+    reloj = QTimer(interval=100)
+    reloj.timeout.connect(lambda: hilo.is_alive() or bucle.quit())
+    reloj.start()
+    bucle.exec()
+    reloj.stop()
+    if "error" in resultado:
+        raise resultado["error"]
+    return resultado.get("valor")
+
+
 class VentanaPrincipal(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -310,6 +339,13 @@ class VentanaPrincipal(QMainWindow):
             "Crear casillas y zonas rellenables para quien reciba el PDF (Ctrl+Mayús+F)",
         )
         self.acc_formulario.setCheckable(True)
+        self.acc_word = self._accion(
+            "Exportar a Word", None, QKeySequence("Ctrl+Shift+W"), self.exportar_word,
+            "Guardar una copia en Word (.docx) para editarla en Google Docs o en Word (Ctrl+Mayús+W)",
+        )
+        # Jose prefirió quitar "crear formularios" (los recibidos se siguen pudiendo rellenar)
+        self.acc_formulario.setVisible(False)
+        self.acc_formulario.setShortcuts([])
         self.acc_deshacer = self._accion("↶", None, S.Undo, self.deshacer, "Deshacer (Ctrl+Z)")
         self.acc_rehacer = self._accion("↷", None, [QKeySequence("Ctrl+Y"), QKeySequence("Ctrl+Shift+Z")], self.rehacer, "Rehacer (Ctrl+Y)")
         self.acc_ocr = self._accion(
@@ -338,7 +374,7 @@ class VentanaPrincipal(QMainWindow):
         for a, teclas in ((self.acc_siguiente, ["Ctrl+Right"]), (self.acc_anterior, ["Ctrl+Left"])):
             a.setShortcuts([QKeySequence(t) for t in teclas])
         self._acciones_doc = [
-            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_formulario, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
+            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_formulario, self.acc_word, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar,
             self.acc_ancho, self.acc_completa, self.acc_buscar, self.acc_cerrar,
         ]
 
@@ -373,7 +409,7 @@ class VentanaPrincipal(QMainWindow):
         barra.addAction(self.acc_ocr)
         barra.addAction(self.acc_editar)
         barra.addAction(self.acc_dibujar)
-        barra.addAction(self.acc_formulario)
+        barra.addAction(self.acc_word)
         barra.addAction(self.acc_deshacer)
         barra.addAction(self.acc_rehacer)
         barra.addSeparator()
@@ -410,16 +446,24 @@ class VentanaPrincipal(QMainWindow):
         self.etiqueta_resultados = QLabel("")
         self.etiqueta_resultados.setMinimumWidth(70)
         barra.addWidget(self.etiqueta_resultados)
-        self.acc_res_ant = self._accion("▲", None, QKeySequence("Shift+F3"), self._buscar_anterior, "Resultado anterior")
-        self.acc_res_sig = self._accion("▼", None, QKeySequence("F3"), self._buscar_siguiente, "Resultado siguiente")
+        # ▲▼ solo sirven para saltar entre los resultados de la búsqueda (no pasan página)
+        self.acc_res_ant = self._accion(
+            "▲", None, QKeySequence("Shift+F3"), self._buscar_anterior, "Resultado de búsqueda anterior (Mayús+F3)"
+        )
+        self.acc_res_sig = self._accion(
+            "▼", None, QKeySequence("F3"), self._buscar_siguiente, "Resultado de búsqueda siguiente (F3)"
+        )
         barra.addAction(self.acc_res_ant)
         barra.addAction(self.acc_res_sig)
-        self._acciones_doc += [self.acc_res_ant, self.acc_res_sig]
+        # Buscar mientras se escribe, en cuanto se deja de teclear un momento
+        self._temporizador_busqueda = QTimer(self, singleShot=True, interval=350)
+        self._temporizador_busqueda.timeout.connect(self._buscar_al_escribir)
 
     def _actualizar_estado(self):
         hay = self.doc is not None
         for a in self._acciones_doc:
             a.setEnabled(hay)
+        self._botones_busqueda()
         self.campo_pagina.setEnabled(hay)
         self.campo_buscar.setEnabled(hay)
         self.pila.setCurrentIndex(1 if hay else 0)
@@ -445,7 +489,9 @@ class VentanaPrincipal(QMainWindow):
     # --- Abrir y cerrar ---------------------------------------------------
     def abrir_dialogo(self):
         carpeta = self.ajustes.value("ultima_carpeta", str(Path.home()))
-        ruta, _ = QFileDialog.getOpenFileName(self, "Abrir PDF", carpeta, "Documentos PDF (*.pdf);;Todos (*)")
+        ruta, _ = QFileDialog.getOpenFileName(
+            self, "Abrir", carpeta, "PDF y Word (*.pdf *.docx);;Documentos PDF (*.pdf);;Documentos de Word (*.docx);;Todos (*)"
+        )
         if ruta:
             self.abrir(ruta)
 
@@ -455,6 +501,8 @@ class VentanaPrincipal(QMainWindow):
             QMessageBox.warning(self, "No se encuentra", f"El archivo ya no existe:\n{ruta}")
             self._quitar_reciente(ruta)
             return False
+        if ruta.lower().endswith(conversion.EXTENSIONES_WORD):
+            return self.importar_word(ruta)
         contrasena = None
         while True:
             try:
@@ -469,6 +517,9 @@ class VentanaPrincipal(QMainWindow):
                 QMessageBox.critical(self, "No se pudo abrir", f"No se pudo abrir el archivo:\n{ruta}\n\n{e}")
                 return False
 
+        return self._mostrar_documento(doc, ruta)
+
+    def _mostrar_documento(self, doc: Documento, ruta: str, reciente: bool = True) -> bool:
         if not self.cerrar_documento():
             doc.cerrar()
             return False
@@ -476,11 +527,86 @@ class VentanaPrincipal(QMainWindow):
         self._actualizar_estado()
         self.visor.cargar(doc)
         self._preparar_miniaturas()
-        self.aviso_escaneado.setVisible(bool(doc.paginas_sin_texto()))
-        self._anadir_reciente(ruta)
+        self._mostrar_aviso()
+        if reciente:
+            self._anadir_reciente(ruta)
         self.ajustes.setValue("ultima_carpeta", str(Path(ruta).parent))
         self.statusBar().showMessage(f"{Path(ruta).name} · {doc.num_paginas} páginas", 5000)
         return True
+
+    # --- Word -------------------------------------------------------------
+    def importar_word(self, ruta: str) -> bool:
+        """Abre un .docx convirtiéndolo en PDF (queda sin guardar hasta que se pulse Guardar)."""
+        import tempfile
+
+        carpeta = Path(tempfile.mkdtemp(prefix="pdfcasero_"))
+        tmp = carpeta / (Path(ruta).stem + ".pdf")
+        self.statusBar().showMessage(f"Convirtiendo {Path(ruta).name} a PDF…")
+        self.setCursor(Qt.CursorShape.WaitCursor)
+        try:
+            metodo = en_segundo_plano(conversion.word_a_pdf, ruta, str(tmp))
+            doc = Documento(tmp)
+        except Exception as e:
+            QMessageBox.critical(self, "No se pudo convertir", f"No se pudo convertir el documento de Word:\n{ruta}\n\n{e}")
+            return False
+        finally:
+            self.unsetCursor()
+        doc.ruta = Path(ruta).with_suffix(".pdf")  # al guardar se propone este nombre, junto al .docx
+        doc.nuevo = True
+        doc.modificado = True
+        if not self._mostrar_documento(doc, ruta, reciente=False):
+            return False
+        aviso = "con Microsoft Word" if metodo == "Word" else "(sin Word instalado, el diseño puede variar un poco)"
+        self.statusBar().showMessage(f"Convertido a PDF {aviso}. Pulsa Guardar para guardarlo como PDF.", 15000)
+        return True
+
+    def exportar_word(self):
+        if not self.doc:
+            return
+        sugerido = str(self.doc.ruta.with_suffix(".docx"))
+        ruta, _ = QFileDialog.getSaveFileName(self, "Exportar a Word", sugerido, "Documento de Word (*.docx)")
+        if not ruta:
+            return
+        if not ruta.lower().endswith(".docx"):
+            ruta += ".docx"
+        dialogo = QProgressDialog("Convirtiendo a Word… (en PDF largos puede tardar unos minutos)", "Cancelar", 0, 0, self)
+        dialogo.setWindowTitle("Exportar a Word")
+        dialogo.setWindowModality(Qt.WindowModality.WindowModal)
+        dialogo.setMinimumDuration(0)
+        trabajo = conversion.ExportacionWord(self.doc.copia_en_memoria(), ruta)
+        bucle = QEventLoop()
+        final = {}
+
+        def comprobar():
+            if dialogo.wasCanceled():
+                trabajo.cancelar()
+                final["r"] = ("cancelado", "")
+                bucle.quit()
+                return
+            r = trabajo.resultado()
+            if r is not None:
+                final["r"] = r
+                bucle.quit()
+
+        reloj = QTimer(interval=300)
+        reloj.timeout.connect(comprobar)
+        reloj.start()
+        dialogo.show()
+        bucle.exec()
+        reloj.stop()
+        dialogo.close()
+        estado, detalle = final.get("r", ("error", ""))
+        if estado == "ok":
+            QMessageBox.information(
+                self,
+                "Exportado a Word",
+                f"Listo: {Path(ruta).name}\n\nPara editarlo en Google: sube el archivo a Google Drive, "
+                "haz clic derecho y elige «Abrir con → Documentos de Google».\n\n"
+                "Cuando termines, en Google Docs usa «Archivo → Descargar → Word (.docx)» y ábrelo aquí con Abrir "
+                "para volver a tenerlo en PDF.",
+            )
+        elif estado == "error":
+            QMessageBox.critical(self, "No se pudo exportar", f"No se pudo convertir a Word.\n\n{detalle}")
 
     def cerrar_documento(self) -> bool:
         """Cierra el PDF. Devuelve False si el usuario cancela por tener cambios sin guardar."""
@@ -500,6 +626,8 @@ class VentanaPrincipal(QMainWindow):
     def guardar(self) -> bool:
         if not self.doc:
             return False
+        if getattr(self.doc, "nuevo", False):
+            return self.guardar_como()  # viene de Word: aún no tiene archivo PDF propio
         if not self.doc.modificado:
             self.statusBar().showMessage("No hay cambios que guardar", 4000)
             return True
@@ -508,13 +636,17 @@ class VentanaPrincipal(QMainWindow):
     def guardar_como(self) -> bool:
         if not self.doc:
             return False
-        sugerido = str(self.doc.ruta.with_name(self.doc.ruta.stem + " (copia).pdf"))
+        if getattr(self.doc, "nuevo", False):
+            sugerido = str(self.doc.ruta)
+        else:
+            sugerido = str(self.doc.ruta.with_name(self.doc.ruta.stem + " (copia).pdf"))
         ruta, _ = QFileDialog.getSaveFileName(self, "Guardar como", sugerido, "Documentos PDF (*.pdf)")
         if not ruta:
             return False
         if not ruta.lower().endswith(".pdf"):
             ruta += ".pdf"
         if self._guardar_en(ruta):
+            self.doc.nuevo = False
             self._anadir_reciente(str(self.doc.ruta))
             return True
         return False
@@ -610,13 +742,26 @@ class VentanaPrincipal(QMainWindow):
         self.campo_buscar.selectAll()
 
     def _texto_busqueda_cambiado(self, texto):
-        if not texto:
+        if not texto.strip():
+            self._temporizador_busqueda.stop()
             self._limpiar_busqueda()
+        else:
+            self._temporizador_busqueda.start()
+
+    def _buscar_al_escribir(self):
+        if self.campo_buscar.text().strip() != self._texto_buscado:
+            self._buscar_siguiente()
+
+    def _botones_busqueda(self):
+        hay = bool(self.doc) and len(self._resultados) > 0
+        self.acc_res_ant.setEnabled(hay)
+        self.acc_res_sig.setEnabled(hay)
 
     def _limpiar_busqueda(self):
         self._resultados, self._activo, self._texto_buscado = [], -1, ""
         self.etiqueta_resultados.setText("")
         self.visor.mostrar_resultados([], -1)
+        self._botones_busqueda()
 
     def _ejecutar_busqueda(self) -> bool:
         texto = self.campo_buscar.text().strip()
@@ -626,6 +771,7 @@ class VentanaPrincipal(QMainWindow):
             self._texto_buscado = texto
             self._resultados = self.doc.buscar(texto)
             self._activo = -1
+            self._botones_busqueda()
             if not self._resultados:
                 self.etiqueta_resultados.setText("Sin resultados")
                 self.visor.mostrar_resultados([], -1)
@@ -964,25 +1110,57 @@ class VentanaPrincipal(QMainWindow):
 
     # --- OCR: hacer editable ---------------------------------------------
     def _crear_aviso_escaneado(self) -> QFrame:
+        """Franja encima de la página: avisa si el PDF es escaneado o si ya se puede editar."""
         aviso = QFrame()
         aviso.setObjectName("avisoEscaneado")
         lay = QHBoxLayout(aviso)
         lay.setContentsMargins(16, 8, 12, 8)
-        texto = QLabel("Este PDF parece escaneado: su texto todavía no se puede buscar ni copiar.")
-        boton = QToolButton()
-        boton.setText("Hacer editable")
-        boton.setObjectName("botonAviso")
-        boton.clicked.connect(self.hacer_editable)
+        self._texto_aviso = QLabel()
+        self._boton_aviso = QToolButton()
+        self._boton_aviso.setObjectName("botonAviso")
+        self._boton_aviso.clicked.connect(self._accion_aviso)
         cerrar = QToolButton()
         cerrar.setText("✕")
         cerrar.setToolTip("Ocultar")
         cerrar.setAutoRaise(True)
         cerrar.clicked.connect(aviso.hide)
-        lay.addWidget(texto, 1)
-        lay.addWidget(boton)
+        lay.addWidget(self._texto_aviso, 1)
+        lay.addWidget(self._boton_aviso)
         lay.addWidget(cerrar)
         aviso.hide()
         return aviso
+
+    def _mostrar_aviso(self):
+        """Escaneado (amarillo, botón Hacer editable) o ya editable (verde, botón Editar texto)."""
+        if not self.doc:
+            self.aviso_escaneado.hide()
+            return
+        sin_texto = self.doc.paginas_sin_texto()
+        self._aviso_escaneado = bool(sin_texto)
+        if sin_texto:
+            if len(sin_texto) == self.doc.num_paginas:
+                texto = "Este PDF parece escaneado: su texto todavía no se puede buscar, copiar ni cambiar."
+            else:
+                texto = f"{len(sin_texto)} páginas de este PDF parecen escaneadas: su texto todavía no se puede buscar ni cambiar."
+            self._texto_aviso.setText(texto)
+            self._boton_aviso.setText("Hacer editable")
+        else:
+            self._texto_aviso.setText(
+                "Este PDF ya es editable: su texto se puede buscar, copiar y cambiar sin pasar el OCR."
+            )
+            self._boton_aviso.setText("Editar texto")
+        self.aviso_escaneado.setProperty("editable", not sin_texto)
+        self.aviso_escaneado.style().unpolish(self.aviso_escaneado)
+        self.aviso_escaneado.style().polish(self.aviso_escaneado)
+        self.aviso_escaneado.show()
+
+    def _accion_aviso(self):
+        if self._aviso_escaneado:
+            self.hacer_editable()
+        else:
+            self.aviso_escaneado.hide()
+            if not self.acc_editar.isChecked():
+                self.acc_editar.trigger()
 
     def hacer_editable(self):
         if not self.doc:
@@ -1030,7 +1208,7 @@ class VentanaPrincipal(QMainWindow):
         if errores:
             QMessageBox.critical(self, "Error en el reconocimiento", f"No se pudo terminar el reconocimiento.\n\n{errores[0]}")
         if hechas:
-            self.aviso_escaneado.setVisible(bool(self.doc.paginas_sin_texto()))
+            self._mostrar_aviso()
             sin_texto = sum(1 for n in hechas if not self.doc.tiene_texto(n))
             mensaje = f"Listo: {len(hechas)} de {total} páginas reconocidas. Ya puedes buscar y copiar el texto."
             if sin_texto:
@@ -1055,12 +1233,12 @@ class VentanaPrincipal(QMainWindow):
         )
 
     def dragEnterEvent(self, e):
-        if any(u.toLocalFile().lower().endswith(".pdf") for u in e.mimeData().urls()):
+        if any(u.toLocalFile().lower().endswith(ABRIBLES) for u in e.mimeData().urls()):
             e.acceptProposedAction()
 
     def dropEvent(self, e):
         for u in e.mimeData().urls():
-            if u.toLocalFile().lower().endswith(".pdf"):
+            if u.toLocalFile().lower().endswith(ABRIBLES):
                 self.abrir(u.toLocalFile())
                 break
 

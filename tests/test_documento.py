@@ -165,3 +165,18 @@ def test_cambiar_palabra_de_imagen_y_firmar_sobre_la_raya(tmp_path):
     # El subrayado sigue ahí debajo de "agosto"
     pix = pagina.get_pixmap(clip=pymupdf.Rect(150, 100.6, 151, 101.4), dpi=144, colorspace=pymupdf.csGRAY)
     assert min(pix.samples) < 120
+
+
+def test_simbolo_euro_no_se_pierde(tmp_path):
+    ruta = tmp_path / "precio.pdf"
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 100), "Total: 10 EUR", fontname="helv", fontsize=12)
+    doc.save(ruta)
+    d = Documento(str(ruta))
+    d.cambiar_linea(0, d.linea_en(0, 90, 96), "Total: 1.028,20 €")
+    d.escribir(0, 72, 200, "Nuevo: 5 €")
+    destino = tmp_path / "precio2.pdf"
+    d.guardar(destino)
+    texto = pymupdf.open(destino)[0].get_text()
+    assert "1.028,20 €" in texto and "5 €" in texto
+    assert destino.stat().st_size < 200_000  # la fuente añadida se guarda recortada

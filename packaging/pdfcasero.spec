@@ -4,6 +4,8 @@
 import os
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_data_files
+
 RAIZ = Path(SPECPATH).parent
 TESSDATA = RAIZ / "packaging" / "tessdata"
 idiomas = [(str(p), "tessdata") for p in TESSDATA.glob("*.traineddata")]
@@ -17,8 +19,9 @@ NO_USADOS = [
     "PySide6.Qt3DCore", "PySide6.QtCharts", "PySide6.QtDataVisualization", "PySide6.QtPdf",
     "PySide6.QtSql", "PySide6.QtTest", "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets",
     "PySide6.QtSvg", "PySide6.QtSvgWidgets", "PySide6.QtBluetooth", "PySide6.QtPositioning",
-    # Extras opcionales de PyMuPDF (tablas a pandas, IA de maquetación…) que no usamos
-    "numpy", "pandas", "onnxruntime", "PIL", "lxml", "yaml", "matplotlib", "scipy",
+    # Extras opcionales de PyMuPDF (tablas a pandas, IA de maquetación…) que no usamos.
+    # numpy y lxml sí hacen falta: los usan pdf2docx y python-docx (exportar a Word).
+    "pandas", "onnxruntime", "PIL", "yaml", "matplotlib", "scipy", "pdf2docx.gui",
 ]
 # Bibliotecas y plugins de Qt que arrastra PySide6 sin hacer falta
 SOBRAN = ("qt6qml", "qt6quick", "virtualkeyboard", "qt6pdf", "qt6network", "qt6svg", "qt6opengl",
@@ -35,7 +38,12 @@ def sobra(ruta: str) -> bool:
 a = Analysis(
     [str(RAIZ / "lanzar.pyw")],
     pathex=[str(RAIZ)],
-    datas=[(str(RAIZ / "pdfcasero" / "recursos"), "pdfcasero/recursos"), *idiomas],
+    datas=[
+        (str(RAIZ / "pdfcasero" / "recursos"), "pdfcasero/recursos"),
+        *idiomas,
+        *collect_data_files("docx"),  # plantilla vacía de Word que usa python-docx
+    ],
+    hiddenimports=["pdf2docx", "mammoth", "fitz"],
     excludes=NO_USADOS,
     noarchive=False,
 )

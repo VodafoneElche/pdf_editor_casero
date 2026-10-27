@@ -11,6 +11,7 @@ son parte de la imagen: se tapan con el color del papel y se escribe encima.
 
 from __future__ import annotations
 
+import zlib
 from collections import Counter
 from dataclasses import dataclass
 
@@ -29,12 +30,24 @@ class Linea:
     origen: pymupdf.Point
     invisible: bool  # texto de la capa del OCR: lo que se ve es la imagen
     exacta: bool = False  # zona de tinta medida en la imagen: no hace falta ajustarla
+    fuente_pdf: str = ""  # nombre de la fuente dentro del PDF, para reutilizarla si se puede
+
+
+# Nombres que delatan una letra sin remates aunque el PDF diga lo contrario (pasa a menudo)
+PISTAS_SANS = ("sans", "arial", "helv", "vodafone", "calibri", "verdana", "segoe", "roboto", "tahoma",
+               "frutiger", "univers", "futura", "gill", "lato", "myriad", "open", "source", "noto")
+PISTAS_SERIF = ("times", "roman", "georgia", "garamond", "cambria", "book", "minion", "palatino")
 
 
 def _fuente_base(flags: int, nombre: str) -> str:
     """Elige la fuente estándar más parecida (las únicas que se pueden usar sin incrustar nada)."""
     nombre = nombre.lower()
-    serif = bool(flags & pymupdf.TEXT_FONT_SERIFED) or "times" in nombre or ("serif" in nombre and "sans" not in nombre)
+    if any(p in nombre for p in PISTAS_SANS) and "serif" not in nombre.replace("sans-serif", ""):
+        serif = False
+    else:
+        serif = bool(flags & pymupdf.TEXT_FONT_SERIFED) or any(p in nombre for p in PISTAS_SERIF) or (
+            "serif" in nombre and "sans" not in nombre
+        )
     mono = bool(flags & pymupdf.TEXT_FONT_MONOSPACED) or "courier" in nombre or "mono" in nombre
     negrita = bool(flags & pymupdf.TEXT_FONT_BOLD) or "bold" in nombre
     cursiva = bool(flags & pymupdf.TEXT_FONT_ITALIC) or "italic" in nombre or "oblique" in nombre
@@ -71,6 +84,7 @@ def lineas(pagina: pymupdf.Page) -> list[Linea]:
                     fuente=_fuente_base(principal["flags"], principal["font"]),
                     origen=pymupdf.Point(spans[0]["origin"]),
                     invisible=all(s.get("alpha", 255) == 0 for s in spans),
+                    fuente_pdf=principal["font"],
                 )
             )
     return resultado
@@ -81,6 +95,84 @@ def linea_en(pagina: pymupdf.Page, punto: pymupdf.Point) -> Linea | None:
         if _margen(linea.rect).contains(punto):
             return linea
     return None
+
+
+# --- Tipos de letra -------------------------------------------------------------
+# Las 14 fuentes estándar del PDF (helv, tiro, cour…) solo tienen letras latinas
+# básicas: el "€" salía como "·". Para eso se usa la fuente original del PDF si
+# trae esas letras, o si no una fuente del sistema (Arial, Times, Courier).
+_FUENTES_SISTEMA = {
+    "he": ("arial", "LiberationSans", "DejaVuSans"),
+    "ti": ("times", "LiberationSerif", "DejaVuSerif"),
+    "co": ("cour", "LiberationMono", "DejaVuSansMono"),
+}
+_SUFIJOS_WINDOWS = {"": "", "bo": "bd", "it": "i", "bi": "bi"}
+_SUFIJOS_LIBRES = {"": "-Regular", "bo": "-Bold", "it": "-Italic", "bi": "-BoldItalic"}
+
+
+def _carpetas_fuentes() -> list[str]:
+    import os
+
+    windows = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+    return [windows, "/usr/share/fonts/truetype/liberation", "/usr/share/fonts/truetype/dejavu",
+            "/usr/share/fonts/truetype/liberation2", "/Library/Fonts"]
+
+
+def _fuente_sistema(base: str) -> str | None:
+    """Archivo .ttf del sistema parecido a la fuente estándar `base` (helv, tibo, cobi…)."""
+    import os
+
+    familia = "he" if base.startswith("helv") or base.startswith("he") else base[:2]
+    estilo = "" if base in ("helv", "tiro", "cour") else base[2:]
+    nombres = _FUENTES_SISTEMA.get(familia, _FUENTES_SISTEMA["he"])
+    candidatos = [nombres[0] + _SUFIJOS_WINDOWS.get(estilo, "") + ".ttf", nombres[1] + _SUFIJOS_LIBRES.get(estilo, "") + ".ttf"]
+    if not estilo:
+        candidatos.append(nombres[2] + ".ttf")
+    for carpeta in _carpetas_fuentes():
+        for nombre in candidatos:
+            ruta = os.path.join(carpeta, nombre)
+            if os.path.isfile(ruta):
+                return ruta
+    return None
+
+
+def _fuente_del_pdf(pagina: pymupdf.Page, nombre: str) -> bytes | None:
+    """El archivo de la fuente `nombre` tal como va dentro del PDF, si se puede sacar."""
+    if not nombre:
+        return None
+    doc = pagina.parent
+    for xref, ext, _tipo, basefont, *_ in pagina.get_fonts(full=True):
+        limpio = basefont.split("+", 1)[-1]
+        if limpio == nombre.split("+", 1)[-1] and ext not in ("n/a", ""):
+            try:
+                _, _, _, contenido = doc.extract_font(xref)
+                return contenido or None
+            except Exception:
+                return None
+    return None
+
+
+def opciones_fuente(pagina: pymupdf.Page, texto: str, base: str, fuente_pdf: str = "") -> dict:
+    """Argumentos de insert_text para escribir `texto` con la letra más fiel posible."""
+    letras = {c for c in texto if not c.isspace()}
+    buffer = _fuente_del_pdf(pagina, fuente_pdf)
+    if buffer:
+        try:
+            fuente = pymupdf.Font(fontbuffer=buffer)
+            if all(fuente.has_glyph(ord(c)) for c in letras):
+                nombre = "PC" + format(zlib.crc32(fuente_pdf.encode()), "x")
+                pagina.insert_font(fontname=nombre, fontbuffer=buffer)
+                return {"fontname": nombre}
+        except Exception:
+            pass
+    if all(ord(c) < 256 for c in letras):
+        return {"fontname": base}
+    ruta = _fuente_sistema(base)
+    if ruta:
+        nombre = "PCs" + base
+        pagina.insert_font(fontname=nombre, fontfile=ruta)
+        return {"fontname": nombre}
+    return {"fontname": base}
 
 
 def preparar(pagina: pymupdf.Page) -> None:
@@ -354,7 +446,9 @@ def reemplazar_linea(pagina: pymupdf.Page, linea: Linea, texto_nuevo: str) -> No
     else:
         _borrar(pagina, [linea.rect], None)
     if texto_nuevo.strip():
-        pagina.insert_text(linea.origen, texto_nuevo, fontname=fuente, fontsize=linea.tamano, color=color)
+        fuente_pdf = "" if linea.invisible else linea.fuente_pdf
+        opciones = opciones_fuente(pagina, texto_nuevo, fuente, fuente_pdf)
+        pagina.insert_text(linea.origen, texto_nuevo, fontsize=linea.tamano, color=color, **opciones)
 
 
 def escribir(
@@ -369,4 +463,4 @@ def escribir(
     if texto.strip():
         preparar(pagina)
         origen = pymupdf.Point(punto.x, punto.y + tamano * 0.8)
-        pagina.insert_text(origen, texto, fontname=fuente, fontsize=tamano, color=color)
+        pagina.insert_text(origen, texto, fontsize=tamano, color=color, **opciones_fuente(pagina, texto, fuente))

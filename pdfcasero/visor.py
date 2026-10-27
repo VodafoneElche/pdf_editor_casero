@@ -44,6 +44,10 @@ class PaginaWidget(QWidget):
         return self.visor.modo == "formulario"
 
     def mouseReleaseEvent(self, e):
+        if self.visor.arrastrando:
+            self.visor.terminar_arrastre()
+            self.setCursor(Qt.CursorShape.OpenHandCursor)
+            return
         if e.button() != Qt.MouseButton.LeftButton:
             return
         if self._dibujando:
@@ -54,6 +58,11 @@ class PaginaWidget(QWidget):
             self.visor.terminar_seleccion()
 
     def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.MiddleButton:
+            # Rueda pulsada: mover la página en cualquier modo
+            self.visor.empezar_arrastre(e.globalPosition())
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            return
         if e.button() != Qt.MouseButton.LeftButton:
             return
         if self._dibujando:
@@ -64,10 +73,20 @@ class PaginaWidget(QWidget):
             self.visor.editar_en(self, self._punto_pdf(e))
         elif not self.visor.rellenar_en(self, self._tupla(e)):
             recuadro = bool(e.modifiers() & Qt.KeyboardModifier.AltModifier)
-            self.visor.empezar_seleccion(self.indice, self._punto_pdf(e), recuadro)
+            p = self._punto_pdf(e)
+            if recuadro or self.visor.palabra_en(self.indice, p, exacta=True) is not None:
+                self.visor.empezar_seleccion(self.indice, p, recuadro)
+            else:
+                # Fuera del texto: la "mano" arrastra la página, como en Acrobat
+                self.visor.empezar_seleccion(self.indice, p)  # quita la selección anterior
+                self.visor.empezar_arrastre(e.globalPosition())
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def mouseMoveEvent(self, e):
         p = self._punto_pdf(e)
+        if self.visor.arrastrando:
+            self.visor.mover_arrastre(e.globalPosition())
+            return
         if self._dibujando:
             self.setCursor(
                 Qt.CursorShape.ArrowCursor if self.visor.dibujo.herramienta == "seleccionar" else Qt.CursorShape.CrossCursor
@@ -93,7 +112,7 @@ class PaginaWidget(QWidget):
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             return
         sobre_texto = self.visor.palabra_en(self.indice, p, exacta=True) is not None
-        self.setCursor(Qt.CursorShape.IBeamCursor if sobre_texto else Qt.CursorShape.ArrowCursor)
+        self.setCursor(Qt.CursorShape.IBeamCursor if sobre_texto else Qt.CursorShape.OpenHandCursor)
 
     def mouseDoubleClickEvent(self, e):
         if self._dibujando:
@@ -215,6 +234,7 @@ class VisorPDF(QScrollArea):
         self.dibujo = ControladorDibujo(self)
         self.formulario = ControladorFormulario(self)
         self._editor: EditorEnLinea | None = None
+        self._arrastre = None  # (posición inicial, scroll horizontal, scroll vertical)
 
         self.setWidgetResizable(True)
         self.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -437,6 +457,23 @@ class VisorPDF(QScrollArea):
         fin = self.palabra_en(pagina, p)
         if fin is not None:
             self.fijar_seleccion(pagina, self._ancla, fin)
+
+    # --- Mover la página con la mano ------------------------------------------
+    @property
+    def arrastrando(self) -> bool:
+        return self._arrastre is not None
+
+    def empezar_arrastre(self, pos_global):
+        self._arrastre = (pos_global, self.horizontalScrollBar().value(), self.verticalScrollBar().value())
+
+    def mover_arrastre(self, pos_global):
+        inicio, h, v = self._arrastre
+        delta = pos_global - inicio
+        self.horizontalScrollBar().setValue(round(h - delta.x()))
+        self.verticalScrollBar().setValue(round(v - delta.y()))
+
+    def terminar_arrastre(self):
+        self._arrastre = None
 
     def terminar_seleccion(self):
         if self._caja is not None:

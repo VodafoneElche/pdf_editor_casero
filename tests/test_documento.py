@@ -177,6 +177,9 @@ def test_simbolo_euro_no_se_pierde(tmp_path):
     d.escribir(0, 72, 200, "Nuevo: 5 €")
     destino = tmp_path / "precio2.pdf"
     d.guardar(destino)
-    texto = pymupdf.open(destino)[0].get_text()
+    pagina = pymupdf.open(destino)[0]
+    # Con Arial (Windows) los espacios salen como espacio duro al extraer; da igual
+    texto = pagina.get_text().replace("\xa0", " ")
     assert "1.028,20 €" in texto and "5 €" in texto
+    assert pagina.search_for("1.028,20 €")
     assert destino.stat().st_size < 200_000  # la fuente añadida se guarda recortada

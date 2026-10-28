@@ -42,12 +42,11 @@ def test_factura_fluye_como_en_google_docs(tmp_path):
                 yield from filas(c.tables)
 
     todas = list(filas(d.tables))
-    # Etiqueta y valor en la misma fila de una tabla sin bordes (Google Docs descoloca
-    # los tabuladores, así que no se usan)
-    assert any("Fecha de emisión:" in t and "01/09/2025" in t for t, _ in todas)
-    assert "<w:tab/>" not in d.element.xml
-    # La dirección va en otra columna, no mezclada con los datos
-    assert any(any("LAURA BARCELO" in c for c in t) and not any("Fecha" in c for c in t) for t, _ in todas)
+    # Google Docs pierde el texto de las tablas metidas dentro de otra tabla: no hay ninguna
+    assert not any(c.tables for t in d.tables for c in t._cells)
+    # Datos a la izquierda y dirección a la derecha, cada uno en su columna; dentro de la
+    # columna, etiqueta y valor en el mismo renglón
+    assert any("Fecha de emisión:\t01/09/2025" in t[0] and "LAURA BARCELO" in t[1] for t, _ in todas)
 
     # El total en su caja gris (celdas sombreadas) y el importe alineado a la derecha
     texto, fila = next((t, r) for t, r in todas if "Total a Pagar" in t)

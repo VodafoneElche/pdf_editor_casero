@@ -644,7 +644,7 @@ def _sigue_parrafo(anterior, fila, ancho):
     )
 
 
-def _escribir_piezas(esc, contenedor, pagina, piezas, fondos, y_previo, x_izq, ancho):
+def _escribir_piezas(esc, contenedor, pagina, piezas, fondos, y_previo, x_izq, ancho, anidado=False):
     """Escribe las piezas de una columna, de arriba abajo, copiando los huecos."""
     textos = [p for p in piezas if p.tipo in ("texto", "imagen")]
     elementos = [(f[0].rect.y0, "fila", f) for f in _filas_de_texto(textos)]
@@ -654,7 +654,8 @@ def _escribir_piezas(esc, contenedor, pagina, piezas, fondos, y_previo, x_izq, a
     # tablas sin bordes, como hace iLovePDF: Google Docs coloca mal los tabuladores
     agrupados = []
     for e in elementos:
-        if e[1] == "fila" and _es_de_rejilla(e[2]):
+        # Dentro de una celda no: Google Docs pierde el texto de las tablas dentro de tablas
+        if e[1] == "fila" and not anidado and _es_de_rejilla(e[2]):
             previo = agrupados[-1] if agrupados else None
             if (
                 previo is not None and previo[1] == "rejilla"
@@ -742,6 +743,12 @@ def pdf_a_word_sencillo(datos_pdf: bytes, destino: str, paginas: list[int] | Non
             if len(columnas) == 1:
                 pendientes += columnas[0][2]
                 continue
+            if any(p.tipo == "tabla" for c in columnas for p in c[2]):
+                # Tablas lado a lado: una debajo de otra, porque Google Docs pierde el texto
+                # de las tablas metidas dentro de otra tabla
+                for c in columnas:
+                    pendientes += c[2]
+                continue
             if pendientes:
                 y_previo = _escribir_piezas(esc, doc, pagina, pendientes, fondos, y_previo, margen_izq, ancho_util)
                 pendientes = []
@@ -763,7 +770,8 @@ def pdf_a_word_sencillo(datos_pdf: bytes, destino: str, paginas: list[int] | Non
                 rejilla[i].set(qn("w:w"), str(int(max(20, limites[i + 1] - limites[i]) * 20)))
                 antes = len(celda.paragraphs)
                 _escribir_piezas(
-                    esc, celda, pagina, contenido, fondos, franja["y0"], limites[i], limites[i + 1] - limites[i]
+                    esc, celda, pagina, contenido, fondos, franja["y0"], limites[i], limites[i + 1] - limites[i],
+                    anidado=True,
                 )
                 vacio = celda.paragraphs[0]
                 if antes == 1 and not vacio.text and len(celda.paragraphs) > 1:

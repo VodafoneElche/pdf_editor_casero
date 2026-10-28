@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import functools
 import threading
 import webbrowser
 from datetime import datetime
@@ -232,12 +233,18 @@ class ControlGoogle:
         v = self.ventana
         if not v.doc or not self._asegurar_conexion():
             return
+        paginas = v.elegir_paginas_word()
+        if paginas is False:
+            return
         nombre = v.doc.ruta.stem
+        if paginas:
+            nombre += f" (página {paginas[0] + 1})"
         xlsx = Path(tempfile.mkdtemp(prefix="pdfcasero_")) / f"{nombre}.xlsx"
         try:
             tablas = con_espera(
                 v, "Enviar a Hojas de cálculo", "Pasando cada dato a su casilla…",
-                conversion.pdf_a_excel, v.doc.copia_en_memoria(), str(xlsx), cancelable=True,
+                functools.partial(conversion.pdf_a_excel, paginas=paginas), v.doc.copia_en_memoria(), str(xlsx),
+                cancelable=True,
             )
         except InterruptedError:
             return

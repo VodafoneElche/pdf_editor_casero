@@ -127,3 +127,18 @@ def test_preparar_para_word_texto_girado_como_imagen_y_fuentes(tmp_path):
     assert "Factura de prueba" in xml and 'w:ascii="Courier New"' in xml
     assert 'w:lineRule="exact"' not in xml
     assert (1, 1, 1) in avances and (2, 1, 1) in avances
+
+
+def test_hoja_solo_la_pagina_elegida(tmp_path):
+    from openpyxl import load_workbook
+
+    from pdfcasero.conversion import pdf_a_excel
+
+    doc = pymupdf.open()
+    for n in range(4):
+        doc.new_page().insert_text((72, 80), f"Página número {n + 1}", fontsize=12)
+    destino = tmp_path / "una.xlsx"
+    pdf_a_excel(doc.tobytes(), str(destino), paginas=[2])
+    libro = load_workbook(destino)
+    assert libro.sheetnames == ["Página 3"]
+    assert "Página número 3" in [c for f in libro["Página 3"].iter_rows(values_only=True) for c in f]

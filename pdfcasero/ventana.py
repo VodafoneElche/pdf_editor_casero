@@ -682,20 +682,20 @@ class VentanaPrincipal(QMainWindow):
             )
 
     def elegir_paginas_word(self):
-        """En PDF largos pregunta si pasar solo la página que se ve o todas.
+        """Si el PDF tiene más de una página, pregunta si pasar solo la que se ve o todas.
 
         Devuelve la lista de páginas (None = todas) o False si se cancela.
         """
         total = self.doc.num_paginas
-        if total <= 3:
+        if total <= 1:
             return None
         actual = self.visor.pagina_actual
         caja = QMessageBox(self)
         caja.setWindowTitle("¿Qué páginas?")
-        caja.setText(
-            f"Este PDF tiene {total} páginas. Convertir cada página lleva unos segundos, "
-            f"así que todas pueden tardar varios minutos."
-        )
+        texto = f"Este PDF tiene {total} páginas. ¿Envías solo la que estás viendo o el documento entero?"
+        if total > 3:
+            texto += "\n\nConvertir cada página lleva unos segundos, así que todas pueden tardar varios minutos."
+        caja.setText(texto)
         solo = caja.addButton(f"Solo la página {actual + 1}", QMessageBox.ButtonRole.AcceptRole)
         todas = caja.addButton(f"Las {total} páginas", QMessageBox.ButtonRole.AcceptRole)
         caja.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)

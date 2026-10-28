@@ -150,8 +150,9 @@ def _imagenes(pagina, tablas_zonas, fondos):
     return zonas
 
 
-def pdf_a_hoja(datos_pdf: bytes, destino: str, cancelado=lambda: False, avance=lambda n, total: None) -> int:
-    """Escribe el .xlsx con una pestaña por página. Devuelve cuántas casillas con datos hay."""
+def pdf_a_hoja(datos_pdf: bytes, destino: str, cancelado=lambda: False, avance=lambda n, total: None, paginas=None) -> int:
+    """Escribe el .xlsx con una pestaña por página (o solo las `paginas` elegidas, contando
+    desde 0). Devuelve cuántas casillas con datos hay."""
     from openpyxl import Workbook
     from openpyxl.drawing.image import Image as ImagenExcel
     from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, OneCellAnchor
@@ -163,6 +164,11 @@ def pdf_a_hoja(datos_pdf: bytes, destino: str, cancelado=lambda: False, avance=l
     from .conversion import preparar_para_word
     from .word_sencillo import _fondos
 
+    numeros = list(range(pymupdf.open(stream=datos_pdf, filetype="pdf").page_count))
+    if paginas:
+        parte = pymupdf.open(stream=datos_pdf, filetype="pdf")
+        parte.select(list(paginas))
+        datos_pdf, numeros = parte.tobytes(), list(paginas)
     datos, _ = preparar_para_word(datos_pdf)  # códigos de barras y texto girado, como imagen
     doc = pymupdf.open(stream=datos, filetype="pdf")
     libro = Workbook()
@@ -172,7 +178,7 @@ def pdf_a_hoja(datos_pdf: bytes, destino: str, cancelado=lambda: False, avance=l
         if cancelado():
             raise InterruptedError
         avance(n, doc.page_count)
-        hoja = libro.create_sheet(f"Página {n + 1}")
+        hoja = libro.create_sheet(f"Página {numeros[n] + 1}")
         hoja.sheet_view.showGridLines = False
         # Al imprimir o pasar a PDF, la página entera a lo ancho de una hoja, como el original
         hoja.sheet_properties.pageSetUpPr.fitToPage = True

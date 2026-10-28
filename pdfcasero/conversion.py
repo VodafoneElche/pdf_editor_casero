@@ -276,12 +276,12 @@ def _valor(texto: str):
     return (numero / 100 if simbolo == "%" else numero), simbolo
 
 
-def pdf_a_excel(datos_pdf: bytes, destino: str, cancelado=lambda: False, avance=lambda n, total: None) -> int:
+def pdf_a_excel(datos_pdf: bytes, destino: str, cancelado=lambda: False, avance=lambda n, total: None, paginas=None) -> int:
     """Pasa el PDF a un .xlsx como iLovePDF: una pestaña por página, cada dato en su casilla
     y las imágenes encima (ver hoja_sencilla). Devuelve cuántas casillas tienen datos."""
     from .hoja_sencilla import pdf_a_hoja
 
-    return pdf_a_hoja(datos_pdf, destino, cancelado, avance)
+    return pdf_a_hoja(datos_pdf, destino, cancelado, avance, paginas)
 
 
 # --- Word → PDF ------------------------------------------------------------------

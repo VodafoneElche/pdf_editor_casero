@@ -8,6 +8,7 @@ from PySide6.QtCore import QEventLoop, QPoint, QRect, QSettings, QSize, Qt, QTim
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QImage, QIntValidator, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -178,6 +179,12 @@ class Bienvenida(QWidget):
         self.setObjectName("bienvenida")
         lay = QVBoxLayout(self)
         lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo = QLabel()
+        logo.setPixmap(
+            QPixmap(str(Path(__file__).resolve().parent / "recursos" / "icono.png")).scaled(
+                96, 96, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+            )
+        )
         titulo = QLabel("PDF Casero")
         titulo.setObjectName("tituloBienvenida")
         version = QLabel(f"Versión {__version__}")
@@ -194,11 +201,41 @@ class Bienvenida(QWidget):
         self.lista = QListWidget()
         self.lista.setObjectName("recientes")
         self.lista.setMaximumWidth(520)
+        # Un clic basta para abrir (antes hacía falta doble clic y el primero solo lo marcaba)
+        self.lista.itemClicked.connect(lambda it: ventana.abrir(it.data(Qt.ItemDataRole.UserRole)))
         self.lista.itemActivated.connect(lambda it: ventana.abrir(it.data(Qt.ItemDataRole.UserRole)))
         self.etiqueta_recientes = QLabel("Abiertos recientemente")
         self.etiqueta_recientes.setObjectName("textoBienvenida")
-        for w in (titulo, version, texto, boton, boton_google, self.etiqueta_recientes, self.lista):
+        for w in (logo, titulo, version, texto, boton, boton_google, self.etiqueta_recientes, self.lista):
             lay.addWidget(w, 0, Qt.AlignmentFlag.AlignHCenter)
+        lay.addWidget(self._muestras_de_color(ventana), 0, Qt.AlignmentFlag.AlignHCenter)
+
+    def _muestras_de_color(self, ventana: "VentanaPrincipal") -> QWidget:
+        """Botones redondos para cambiar el color de fondo, como en un navegador."""
+        from .estilo import TEMAS
+
+        caja = QWidget()
+        fila = QHBoxLayout(caja)
+        fila.setContentsMargins(0, 16, 0, 0)
+        fila.setSpacing(10)
+        etiqueta = QLabel("Color de fondo:")
+        etiqueta.setObjectName("textoBienvenida")
+        fila.addWidget(etiqueta)
+        actual = ventana.ajustes.value("tema", "gris")
+        self.muestras = {}
+        for nombre, (texto, fondo, _, _, color) in TEMAS.items():
+            b = QToolButton()
+            b.setObjectName("muestraTema")
+            b.setCheckable(True)
+            b.setAutoExclusive(True)
+            b.setChecked(nombre == actual)
+            b.setToolTip(texto)
+            b.setFixedSize(32, 32)
+            b.setStyleSheet(f"QToolButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {fondo}, stop:0.5 {fondo}, stop:0.51 {color}, stop:1 {color}); }}")
+            b.clicked.connect(lambda _=False, n=nombre: ventana.cambiar_tema(n))
+            fila.addWidget(b)
+            self.muestras[nombre] = b
+        return caja
 
     def actualizar(self, recientes: list[str]):
         self.lista.clear()
@@ -826,6 +863,12 @@ class VentanaPrincipal(QMainWindow):
         return r == QMessageBox.StandardButton.Discard
 
     # --- Recientes --------------------------------------------------------
+    def cambiar_tema(self, nombre: str):
+        from .estilo import hoja_estilo
+
+        self.ajustes.setValue("tema", nombre)
+        QApplication.instance().setStyleSheet(hoja_estilo(nombre))
+
     def recientes(self) -> list[str]:
         valor = self.ajustes.value("recientes", [])
         if isinstance(valor, str):

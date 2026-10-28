@@ -7,7 +7,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from .estilo import HOJA_ESTILO
+from PySide6.QtCore import QSettings
+
+from .estilo import hoja_estilo
 from .ventana import VentanaPrincipal
 
 
@@ -26,7 +28,7 @@ def preparar_aspecto(app: QApplication) -> None:
         pass
     app.setStyle("Fusion")
     app.setPalette(app.style().standardPalette())
-    app.setStyleSheet(HOJA_ESTILO)
+    app.setStyleSheet(hoja_estilo(QSettings("PDFCasero", "PDFCasero").value("tema", "gris")))
 
 
 def main() -> int:

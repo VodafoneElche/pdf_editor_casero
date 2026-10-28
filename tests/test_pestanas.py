@@ -70,3 +70,23 @@ def test_cada_pdf_en_su_pestana(ventana, tmp_path, monkeypatch):
     # Cerrar la última vuelve a la pantalla de bienvenida
     assert ventana.cerrar_documento()
     assert ventana.doc is None and ventana.pila.currentIndex() == 0
+
+
+def test_inicio_colores_y_recientes(ventana, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    guardado = {}
+    monkeypatch.setattr(type(ventana.ajustes), "setValue", lambda self, k, v: guardado.__setitem__(k, v))
+    # Los botones de color cambian el fondo de toda la app y se recuerdan
+    assert set(ventana.bienvenida.muestras) == {"gris", "rosa", "rojo", "naranja", "celeste"}
+    ventana.bienvenida.muestras["celeste"].click()
+    assert guardado["tema"] == "celeste" and "#e6f2fb" in QApplication.instance().styleSheet()
+    ventana.bienvenida.muestras["gris"].click()
+    assert "#f5f5f7" in QApplication.instance().styleSheet()
+
+    # Un clic en un reciente lo abre
+    ruta = pdf(tmp_path, "reciente", 1)
+    ventana.bienvenida.actualizar([ruta])
+    lista = ventana.bienvenida.lista
+    lista.itemClicked.emit(lista.item(0))
+    assert ventana.doc is not None and ventana.doc.ruta.name == "reciente.pdf"

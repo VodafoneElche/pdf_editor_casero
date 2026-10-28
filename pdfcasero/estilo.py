@@ -2,6 +2,23 @@
 
 ACENTO = "#c4302b"
 
+# Colores de fondo que se eligen en la pantalla de inicio, como en un navegador:
+# nombre -> (nombre a la vista, fondo de la ventana, fondo detrás de las páginas,
+#            panel de miniaturas y pestañas, color del botón)
+TEMAS = {
+    "gris": ("Gris (el de siempre)", "#f5f5f7", "#e4e4e8", "#f0f0f3", "#c9c9cf"),
+    "rosa": ("Rosa suave", "#fbe9f1", "#f2d3e1", "#f8e0eb", "#f2a7c9"),
+    "rojo": ("Rojo suave", "#fbe7e6", "#f1cfcd", "#f7dcda", "#e88f8b"),
+    "naranja": ("Naranja suave", "#fdeedf", "#f5d9bd", "#fae4cd", "#f4b47a"),
+    "celeste": ("Azul celeste suave", "#e6f2fb", "#cbe2f3", "#d9eaf7", "#8ec8ef"),
+}
+
+
+def hoja_estilo(tema: str = "gris") -> str:
+    _, fondo, visor, panel, _ = TEMAS.get(tema, TEMAS["gris"])
+    return HOJA_ESTILO.replace("#f5f5f7", fondo).replace("#e4e4e8", visor).replace("#f0f0f3", panel)
+
+
 HOJA_ESTILO = f"""
 QMainWindow, #bienvenida {{ background: #f5f5f7; }}
 QToolBar#barraDibujo {{ background: #fafafb; border: none; border-bottom: 1px solid #dddde1; padding: 2px 8px; spacing: 4px; }}
@@ -32,7 +49,12 @@ QListWidget#recientes {{
     min-width: 420px; max-height: 260px;
 }}
 QListWidget#recientes::item {{ padding: 6px 8px; border-radius: 6px; }}
+QListWidget#recientes::item {{ color: #1d1d1f; }}
 QListWidget#recientes::item:hover {{ background: #f3f3f6; }}
+QListWidget#recientes::item:selected {{ background: #f6d9d7; color: #1d1d1f; }}
+QToolButton#muestraTema {{ border: 2px solid #ffffff; border-radius: 15px; min-width: 26px; min-height: 26px; }}
+QToolButton#muestraTema:hover {{ border-color: #9a9aa2; }}
+QToolButton#muestraTema:checked {{ border: 3px solid {ACENTO}; }}
 QFrame#avisoEscaneado {{ background: #fff4d6; border-bottom: 1px solid #f0d68a; color: #5a4500; }}
 QFrame#avisoEscaneado[editable="true"] {{ background: #e3f4e6; border-bottom: 1px solid #a9d8b2; color: #1f5a2b; }}
 QToolButton#botonAviso {{

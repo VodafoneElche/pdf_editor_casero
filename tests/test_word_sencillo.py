@@ -44,6 +44,9 @@ def test_factura_fluye_como_en_google_docs(tmp_path):
     todas = list(filas(d.tables))
     # Google Docs pierde el texto de las tablas metidas dentro de otra tabla: no hay ninguna
     assert not any(c.tables for t in d.tables for c in t._cells)
+    # ...y junta dos tablas seguidas en una: siempre hay un párrafo entre medias
+    hijos = [e.tag.rsplit("}", 1)[1] for e in d.element.body]
+    assert all(not (a == b == "tbl") for a, b in zip(hijos, hijos[1:]))
     # Datos a la izquierda y dirección a la derecha, cada uno en su columna; dentro de la
     # columna, etiqueta y valor en el mismo renglón
     assert any("Fecha de emisión:\t01/09/2025" in t[0] and "LAURA BARCELO" in t[1] for t, _ in todas)

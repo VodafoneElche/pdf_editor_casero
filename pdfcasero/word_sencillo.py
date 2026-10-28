@@ -184,6 +184,25 @@ def _franjas(piezas):
     return franjas
 
 
+def _bloques(franjas, hueco=16):
+    """Junta las franjas seguidas con poco hueco entre ellas: los renglones de etiqueta y
+    valor y la dirección de al lado son un mismo bloque, aunque no se toquen."""
+    bloques = []
+    for f in franjas:
+        tabla = any(p.tipo == "tabla" for p in f["piezas"])
+        if (
+            bloques and not tabla and not bloques[-1]["tabla"] and f["y0"] - bloques[-1]["y1"] < hueco
+            # sin perder columnas: un párrafo a todo lo ancho no se come lo que va lado a lado
+            and len(_columnas(bloques[-1]["piezas"] + f["piezas"]))
+            >= max(len(_columnas(bloques[-1]["piezas"])), len(_columnas(f["piezas"])))
+        ):
+            bloques[-1]["piezas"] += f["piezas"]
+            bloques[-1]["y1"] = max(bloques[-1]["y1"], f["y1"])
+        else:
+            bloques.append({**f, "piezas": list(f["piezas"]), "tabla": tabla})
+    return bloques
+
+
 def _columnas(piezas, hueco=40):
     """Separa las piezas de una franja en columnas cuando hay un hueco claro entre ellas."""
     tramos = []
@@ -207,6 +226,31 @@ def _columnas(piezas, hueco=40):
         else:
             juntos.append(t)
     return juntos
+
+
+def _partir_etiquetas(columna):
+    """Una columna de «etiqueta: valor» se parte en dos (etiquetas y valores), cada una en
+    su celda, en vez de usar tabuladores, que Google Docs coloca mal."""
+    x0, x1, piezas = columna
+    if any(p.tipo != "texto" for p in piezas):
+        return [columna]
+    filas = _filas_de_texto(piezas)
+    dobles = [f for f in filas if len(f) == 2]
+    if len(dobles) < 3 or any(len(f) > 2 for f in filas):
+        return [columna]
+    ancla = min(f[1].rect.x0 for f in dobles)
+    if any(abs(f[1].rect.x0 - ancla) > 5 for f in dobles):
+        return [columna]
+    etiquetas = [f[0] for f in filas]
+    if any(p.rect.x1 > ancla - 2 for p in etiquetas):
+        return [columna]
+    valores = [f[1] for f in dobles]
+    for p in etiquetas + valores:
+        p.suelto = True  # cada etiqueta y cada valor en su renglón, sin juntarlos en párrafos
+    return [
+        [x0, max(p.rect.x1 for p in etiquetas), etiquetas],
+        [ancla, x1, valores],
+    ]
 
 
 def _alineadas(izquierda, derecha) -> bool:
@@ -634,6 +678,8 @@ def _sigue_parrafo(anterior, fila, ancho):
         return False
     if anterior[0].tipo != "texto" or fila[0].tipo != "texto":
         return False
+    if getattr(fila[0], "suelto", False):
+        return False
     a, b = anterior[0], fila[0]
     alto = a.rect.height
     return (
@@ -700,6 +746,29 @@ def _escribir_piezas(esc, contenedor, pagina, piezas, fondos, y_previo, x_izq, a
     return y_previo
 
 
+def _separar_tablas(cuerpo):
+    """Google Docs junta dos tablas seguidas en una sola y descoloca las filas: entre
+    tabla y tabla va un párrafo diminuto."""
+    from docx.oxml import OxmlElement
+
+    hijos = list(cuerpo)
+    for a, b in zip(hijos, hijos[1:]):
+        if a.tag == qn("w:tbl") and b.tag == qn("w:tbl"):
+            p = OxmlElement("w:p")
+            ppr = OxmlElement("w:pPr")
+            esp = OxmlElement("w:spacing")
+            for k, v in (("w:before", "0"), ("w:after", "0"), ("w:line", "20"), ("w:lineRule", "exact")):
+                esp.set(qn(k), v)
+            ppr.append(esp)
+            rpr = OxmlElement("w:rPr")
+            sz = OxmlElement("w:sz")
+            sz.set(qn("w:val"), "2")
+            rpr.append(sz)
+            ppr.append(rpr)
+            p.append(ppr)
+            a.addnext(p)
+
+
 def pdf_a_word_sencillo(datos_pdf: bytes, destino: str, paginas: list[int] | None = None, avance=None) -> None:
     """Convierte el PDF en un .docx que fluye (ver la explicación del módulo)."""
     from docx.enum.section import WD_SECTION
@@ -738,7 +807,7 @@ def pdf_a_word_sencillo(datos_pdf: bytes, destino: str, paginas: list[int] | Non
         # Las franjas de una sola columna seguidas se escriben juntas, para que los renglones
         # de una misma caja o lista de datos acaben en la misma tabla
         pendientes = []
-        for franja in _franjas(piezas) + [None]:
+        for franja in _bloques(_franjas(piezas)) + [None]:
             columnas = _columnas(franja["piezas"]) if franja else []
             if len(columnas) == 1:
                 pendientes += columnas[0][2]
@@ -755,6 +824,7 @@ def pdf_a_word_sencillo(datos_pdf: bytes, destino: str, paginas: list[int] | Non
             if franja is None:
                 break
             # Lado a lado: tabla invisible con una columna por cada bloque
+            columnas = [parte for c in columnas for parte in _partir_etiquetas(c)]
             if franja["y0"] - y_previo > 2:
                 esc.contenedor_parrafo(doc, franja["y0"] - y_previo)
             t = doc.add_table(rows=1, cols=len(columnas))
@@ -796,4 +866,5 @@ def pdf_a_word_sencillo(datos_pdf: bytes, destino: str, paginas: list[int] | Non
         if girado:
             run = p.add_run(" ".join(girado))
             run.font.size = Pt(5)
+    _separar_tablas(doc.element.body)
     doc.save(destino)

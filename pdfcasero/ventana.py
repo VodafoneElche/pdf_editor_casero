@@ -185,7 +185,7 @@ class Bienvenida(QWidget):
                 96, 96, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
             )
         )
-        titulo = QLabel("PDF Casero")
+        titulo = QLabel("PDF Familiar")
         titulo.setObjectName("tituloBienvenida")
         version = QLabel(f"Versión {__version__}")
         version.setObjectName("textoBienvenida")
@@ -303,7 +303,7 @@ class VentanaPrincipal(QMainWindow):
         self._activo = -1
         self._texto_buscado = ""
 
-        self.setWindowTitle(f"PDF Casero {__version__}")
+        self.setWindowTitle(f"PDF Familiar {__version__}")
         self.setAcceptDrops(True)
         self.resize(1200, 850)
 
@@ -568,7 +568,7 @@ class VentanaPrincipal(QMainWindow):
             self.acc_deshacer.setEnabled(self.doc.puede_deshacer)
             self.acc_rehacer.setEnabled(self.doc.puede_rehacer)
             marca = "● " if self.doc.modificado else ""
-            self.setWindowTitle(f"{marca}{self.doc.titulo} – PDF Casero {__version__}")
+            self.setWindowTitle(f"{marca}{self.doc.titulo} – PDF Familiar {__version__}")
             self._rotular_pestanas()
         else:
             self.acc_deshacer.setEnabled(False)
@@ -579,7 +579,7 @@ class VentanaPrincipal(QMainWindow):
             self._poner_modo("leer")
             self.etiqueta_total.setText(" de 0 ")
             self.campo_pagina.setText("")
-            self.setWindowTitle(f"PDF Casero {__version__}")
+            self.setWindowTitle(f"PDF Familiar {__version__}")
             self.bienvenida.actualizar(self.recientes())
 
     # --- Abrir y cerrar ---------------------------------------------------
@@ -1451,8 +1451,8 @@ class VentanaPrincipal(QMainWindow):
     def _acerca_de(self):
         QMessageBox.about(
             self,
-            "Acerca de PDF Casero",
-            f"<b>PDF Casero {__version__}</b><br>Lector y editor de PDF para uso familiar.<br><br>"
+            "Acerca de PDF Familiar",
+            f"<b>PDF Familiar {__version__}</b><br>Lector y editor de PDF para uso familiar.<br><br>"
             "Hecho con PySide6 (Qt) y PyMuPDF.",
         )
 

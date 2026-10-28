@@ -1,4 +1,4 @@
-# Receta de PyInstaller: convierte PDF Casero en una carpeta con PDFCasero.exe.
+# Receta de PyInstaller: convierte PDF Familiar en una carpeta con PDFCasero.exe.
 # Uso (desde la raíz del repositorio):  pyinstaller packaging/pdfcasero.spec
 # Antes hay que descargar los idiomas del OCR en packaging/tessdata (ver README).
 import os

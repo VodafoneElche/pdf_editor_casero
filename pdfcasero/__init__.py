@@ -1,4 +1,4 @@
-"""PDF Casero: lector y editor de PDF para uso familiar."""
+"""PDF Familiar: lector y editor de PDF para uso familiar."""
 
 VERSION_BASE = "0.9"
 try:  # el número de compilación lo escribe el instalador (GitHub Actions)

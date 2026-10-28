@@ -40,7 +40,7 @@ TIPO_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.docu
 TIPO_HOJA_GOOGLE = "application/vnd.google-apps.spreadsheet"
 TIPO_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-PAGINA_FIN = """<!doctype html><meta charset="utf-8"><title>PDF Casero</title>
+PAGINA_FIN = """<!doctype html><meta charset="utf-8"><title>PDF Familiar</title>
 <body style="font-family:Segoe UI,sans-serif;text-align:center;margin-top:15vh;color:#1d1d1f">
 <h2>{titulo}</h2><p>{texto}</p></body>"""
 
@@ -197,8 +197,8 @@ class CuentaGoogle:
                 bien = "code" in q
                 pagina = PAGINA_FIN.format(
                     titulo="Cuenta conectada ✔" if bien else "No se ha conectado",
-                    texto="Ya puedes cerrar esta pestaña y volver a PDF Casero." if bien
-                    else "Vuelve a PDF Casero e inténtalo otra vez.",
+                    texto="Ya puedes cerrar esta pestaña y volver a PDF Familiar." if bien
+                    else "Vuelve a PDF Familiar e inténtalo otra vez.",
                 )
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -228,7 +228,7 @@ class CuentaGoogle:
         finally:
             servidor.server_close()
         if "code" not in respuesta:
-            raise ErrorGoogle("No se ha dado permiso a PDF Casero" + (f" ({respuesta['error']})." if "error" in respuesta else "."))
+            raise ErrorGoogle("No se ha dado permiso a PDF Familiar" + (f" ({respuesta['error']})." if "error" in respuesta else "."))
         cuerpo, _ = _peticion(URL_TOKEN, {
             "code": respuesta["code"], "client_id": client_id, "client_secret": client_secret,
             "redirect_uri": redireccion, "grant_type": "authorization_code", "code_verifier": verificador,

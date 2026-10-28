@@ -1,11 +1,11 @@
-; Instalador de PDF Casero (Inno Setup 6).
+; Instalador de PDF Familiar (Inno Setup 6).
 ; Se compila después de PyInstaller:  iscc /DVersion=0.1.0 packaging\instalador.iss
 ; Resultado: packaging\salida\PDFCasero-Instalador-<versión>.exe
 
 #ifndef Version
   #define Version "0.1.0"
 #endif
-#define Nombre "PDF Casero"
+#define Nombre "PDF Familiar"
 #define Exe "PDFCasero.exe"
 
 [Setup]
@@ -13,7 +13,7 @@ AppId={{E14513AA-93E1-46D7-8FF1-50121DBD245B}
 AppName={#Nombre}
 AppVersion={#Version}
 AppVerName={#Nombre} {#Version}
-AppPublisher=PDF Casero
+AppPublisher=PDF Familiar
 DefaultDirName={autopf}\{#Nombre}
 DefaultGroupName={#Nombre}
 DisableProgramGroupPage=yes
@@ -33,7 +33,7 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 ChangesAssociations=yes
-; PDF Casero se cierra solo antes de instalar (ver [Code]); así el instalador no se queda
+; PDF Familiar se cierra solo antes de instalar (ver [Code]); así el instalador no se queda
 ; esperando a que Windows libere los archivos de una versión que sigue abierta
 CloseApplications=no
 
@@ -54,6 +54,11 @@ Name: "asociar"; Description: "{cm:Asociar}"; Flags: unchecked
 [Files]
 Source: "..\dist\PDFCasero\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; Antes se llamaba «PDF Casero»: quitar los accesos directos con el nombre antiguo
+Type: files; Name: "{autoprograms}\PDF Casero.lnk"
+Type: files; Name: "{autodesktop}\PDF Casero.lnk"
+
 [Icons]
 Name: "{autoprograms}\{#Nombre}"; Filename: "{app}\{#Exe}"
 Name: "{autodesktop}\{#Nombre}"; Filename: "{app}\{#Exe}"; Tasks: escritorio
@@ -73,14 +78,14 @@ Root: HKA; Subkey: "Software\PDFCasero\Capabilities"; ValueType: string; ValueNa
 Root: HKA; Subkey: "Software\PDFCasero\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "Leer, editar, dibujar y rellenar PDF"
 Root: HKA; Subkey: "Software\PDFCasero\Capabilities\FileAssociations"; ValueType: string; ValueName: ".pdf"; ValueData: "PDFCasero.pdf"
 Root: HKA; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "PDFCasero"; ValueData: "Software\PDFCasero\Capabilities"; Flags: uninsdeletevalue
-; Solo si se marca la casilla: abrir los PDF con PDF Casero (en Windows 10/11 puede que el sistema pregunte una vez)
+; Solo si se marca la casilla: abrir los PDF con PDF Familiar (en Windows 10/11 puede que el sistema pregunte una vez)
 Root: HKA; Subkey: "Software\Classes\.pdf"; ValueType: string; ValueData: "PDFCasero.pdf"; Tasks: asociar; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\{#Exe}"; Description: "{cm:LaunchProgram,{#Nombre}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// Cierra PDF Casero (y los procesos que deja convirtiendo a Word o leyendo con el OCR)
+// Cierra PDF Familiar (y los procesos que deja convirtiendo a Word o leyendo con el OCR)
 // antes de copiar los archivos nuevos.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var

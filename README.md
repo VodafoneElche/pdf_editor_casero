@@ -1,4 +1,4 @@
-# PDF Casero
+# PDF Familiar
 
 Lector y editor de PDF para uso familiar en Windows 10 y 11. Solo lo esencial: leer PDF, reconocer texto de documentos escaneados (OCR), editar el texto y convertir PDF no editables en editables, dibujar esquemas (flechas, globos, líneas…), organizar páginas y crear o rellenar formularios.
 
@@ -26,7 +26,7 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 2. Haz doble clic en `PDFCasero-Instalador-x.y.z.exe` y sigue los pasos. No pide contraseña de administrador: se instala para tu usuario (si quieres, puedes elegir instalarlo para todos).
 3. Como el instalador no está firmado, Windows puede mostrar "Windows protegió su PC". Pulsa **Más información → Ejecutar de todas formas**.
 
-Lleva todo dentro, también los idiomas del OCR, así que funciona sin Internet. Durante la instalación puedes elegir crear un icono en el escritorio y usar PDF Casero para abrir los PDF; en cualquier caso aparece en **Abrir con** y en **Configuración → Aplicaciones → Aplicaciones predeterminadas**. Se desinstala desde **Configuración → Aplicaciones**, como cualquier otro programa.
+Lleva todo dentro, también los idiomas del OCR, así que funciona sin Internet. Durante la instalación puedes elegir crear un icono en el escritorio y usar PDF Familiar para abrir los PDF; en cualquier caso aparece en **Abrir con** y en **Configuración → Aplicaciones → Aplicaciones predeterminadas**. Se desinstala desde **Configuración → Aplicaciones**, como cualquier otro programa.
 
 ## Probarlo sin instalar (con Python)
 
@@ -96,14 +96,14 @@ Botón **Google** de la barra:
 - **Conectar cuenta de Google:** la primera vez se abre el navegador, entras con tu Gmail y pulsas **Permitir**. Cada ordenador (y cada usuario de Windows) usa su propia cuenta; la sesión se guarda cifrada solo en ese ordenador. Desde el mismo menú se puede **cambiar de cuenta** o **desconectarla**.
 - **Enviar a Google Docs:** convierte el PDF a Word (facturas incluidas: datos, tablas y gráfica en su sitio), lo sube a tu Google Drive como Documento de Google y lo abre en el navegador para editarlo.
 - **Enviar a Hojas de cálculo de Google:** como iLovePDF, cada página va en su pestaña con cada dato en su casilla, en el mismo sitio que en el PDF, los fondos grises pintados y los logotipos, códigos de barras, QR y gráficas como imágenes encima de las casillas. Los importes van como números para poder sumarlos.
-- **Traer de Google como PDF:** enseña los documentos y hojas de cálculo enviados desde PDF Casero y abre el elegido como PDF (lo convierte el propio Google). Pulsa **Guardar** para guardarlo.
-- PDF Casero solo puede ver los archivos que él mismo ha subido, no el resto de tu Drive.
+- **Traer de Google como PDF:** enseña los documentos y hojas de cálculo enviados desde PDF Familiar y abre el elegido como PDF (lo convierte el propio Google). Pulsa **Guardar** para guardarlo.
+- PDF Familiar solo puede ver los archivos que él mismo ha subido, no el resto de tu Drive.
 - **Guardar copia en Word (.docx)** y **Abrir** un `.docx` siguen funcionando sin cuenta. Funciona muy bien con PDF de texto (facturas, cartas); con formularios impresos como imagen el resultado es más pobre.
 
 ### Registrar la app en Google (una sola vez, lo hace el administrador)
 
-1. En [console.cloud.google.com](https://console.cloud.google.com) crea el proyecto «PDF Casero» y habilita **Google Drive API**.
-2. En **Google Auth Platform**: tipo **Externo**, nombre «PDF Casero», y en **Público** pulsa **Publicar aplicación** (si se queda en modo prueba, solo entran los usuarios de prueba y la sesión caduca cada 7 días).
+1. En [console.cloud.google.com](https://console.cloud.google.com) crea el proyecto «PDF Familiar» y habilita **Google Drive API**.
+2. En **Google Auth Platform**: tipo **Externo**, nombre «PDF Familiar», y en **Público** pulsa **Publicar aplicación** (si se queda en modo prueba, solo entran los usuarios de prueba y la sesión caduca cada 7 días).
 3. En **Clientes** crea uno de tipo **Aplicación de escritorio** y descarga el JSON.
 4. Guarda su contenido como secreto del repositorio `GOOGLE_CLIENTE_JSON`: el instalador lo incluye. Sin él, la app pide elegir ese archivo la primera vez.
 

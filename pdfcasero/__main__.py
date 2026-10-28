@@ -38,7 +38,7 @@ def main() -> int:
 
         return ejecutar(sys.argv[2])
     app = QApplication(sys.argv)
-    app.setApplicationName("PDF Casero")
+    app.setApplicationName("PDF Familiar")
     app.setOrganizationName("PDFCasero")
     preparar_aspecto(app)
     app.setWindowIcon(QIcon(str(ICONO)))

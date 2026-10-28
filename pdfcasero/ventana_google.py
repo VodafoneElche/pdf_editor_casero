@@ -84,7 +84,7 @@ class ElegirDocumento(QDialog):
         self.setWindowTitle("Traer de Google")
         self.resize(480, 420)
         lay = QVBoxLayout(self)
-        lay.addWidget(QLabel(f"Documentos y hojas de cálculo enviados desde PDF Casero a <b>{correo}</b>:"))
+        lay.addWidget(QLabel(f"Documentos y hojas de cálculo enviados desde PDF Familiar a <b>{correo}</b>:"))
         self.lista = QListWidget()
         for d in documentos:
             tipo = "Hoja de cálculo" if d.get("mimeType") == google.TIPO_HOJA_GOOGLE else "Documento"
@@ -188,7 +188,7 @@ class ControlGoogle:
         self.conectar()
 
     def desconectar(self):
-        texto = f"¿Desconectar {self.cuenta.correo} de PDF Casero en este ordenador?\nTus documentos siguen en Google Drive."
+        texto = f"¿Desconectar {self.cuenta.correo} de PDF Familiar en este ordenador?\nTus documentos siguen en Google Drive."
         if QMessageBox.question(self.ventana, "Desconectar", texto) == QMessageBox.StandardButton.Yes:
             self.cuenta.desconectar()
             self.ventana.statusBar().showMessage("Cuenta de Google desconectada", 5000)
@@ -275,7 +275,7 @@ class ControlGoogle:
         if not documentos:
             QMessageBox.information(
                 v, "Traer de Google",
-                "Todavía no hay documentos enviados desde PDF Casero con esta cuenta.\n\n"
+                "Todavía no hay documentos enviados desde PDF Familiar con esta cuenta.\n\n"
                 "Abre un PDF y pulsa Google → Enviar a Google Docs o Enviar a Hojas de cálculo.",
             )
             return

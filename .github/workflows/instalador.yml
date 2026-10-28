@@ -82,8 +82,16 @@ jobs:
           name: PDFCasero-Instalador-${{ steps.version.outputs.valor }}
           path: packaging/salida/*.exe
           if-no-files-found: error
+      # Cada versión que entra en la rama principal se publica en Releases con su instalador:
+      # ese enlace no caduca (los de los artefactos de prueba sí)
       - name: Publicar versión
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create ${{ github.ref_name }} packaging/salida/*.exe --title "PDF Familiar ${{ github.ref_name }}" --notes "Descarga el instalador, haz doble clic y sigue los pasos."
+        run: |
+          etiqueta="v${{ steps.version.outputs.valor }}"
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then etiqueta="${{ github.ref_name }}"; fi
+          gh release create "$etiqueta" packaging/salida/*.exe --target "${{ github.sha }}" --latest \
+            --title "PDF Familiar ${{ steps.version.outputs.valor }}" \
+            --notes "Descarga **PDFCasero-Instalador-${{ steps.version.outputs.valor }}.exe**, haz doble clic y sigue los pasos."

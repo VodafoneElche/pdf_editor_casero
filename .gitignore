@@ -4,5 +4,8 @@ __pycache__/
 venv/
 build/
 dist/
-*.spec
+packaging/tessdata/
 .pytest_cache/
+packaging/salida/
+pdfcasero/recursos/google_cliente.json
+pdfcasero/_compilacion.py

@@ -1,0 +1,89 @@
+name: Instalador
+
+# Construye el instalador para Windows y lo comprueba. Se puede descargar desde
+# la pestaña Actions (artefacto "PDFCasero-Instalador-<versión>"). Al crear una etiqueta
+# v1.2.3 se publica además como versión (Releases) del repositorio.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    env:
+      # ID de cliente OAuth de Google (Aplicación de escritorio), guardado como secreto del repositorio
+      GOOGLE_CLIENTE: ${{ secrets.GOOGLE_CLIENTE_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependencias
+        run: pip install -r requirements.txt pyinstaller
+      - name: Idiomas del OCR
+        run: python -c "from pathlib import Path; from pdfcasero.ocr import descargar_idiomas; print(descargar_idiomas(Path('packaging/tessdata')))"
+      - name: Número de compilación
+        shell: bash
+        run: echo 'COMPILACION = "${{ github.run_number }}"' > pdfcasero/_compilacion.py
+      - name: Versión
+        id: version
+        shell: bash
+        run: echo "valor=$(python -c 'import pdfcasero; print(pdfcasero.__version__)')" >> "$GITHUB_OUTPUT"
+      - name: ID de cliente de Google
+        if: env.GOOGLE_CLIENTE != ''
+        shell: pwsh
+        run: '[IO.File]::WriteAllText("$PWD\pdfcasero\recursos\google_cliente.json", $env:GOOGLE_CLIENTE)'
+      - name: Empaquetar con PyInstaller
+        run: pyinstaller --noconfirm packaging/pdfcasero.spec
+      - name: Probar el programa empaquetado
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\PDFCasero\PDFCasero.exe -ArgumentList '--autoprueba', "$PWD\autoprueba.txt" -Wait -PassThru
+          Get-Content autoprueba.txt
+          if ($p.ExitCode -ne 0) { exit 1 }
+          "Tamaño: {0:N0} MB" -f ((Get-ChildItem dist\PDFCasero -Recurse | Measure-Object Length -Sum).Sum / 1MB)
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+      - name: Crear el instalador
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          & $iscc /Qp "/DVersion=${{ steps.version.outputs.valor }}" packaging\instalador.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem packaging\salida
+      - name: Instalar, probar y desinstalar
+        shell: pwsh
+        run: |
+          $instalador = (Get-ChildItem packaging\salida\*.exe).FullName
+          Start-Process $instalador -ArgumentList '/VERYSILENT', '/CURRENTUSER', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS=escritorio' -Wait
+          $exe = "$env:LOCALAPPDATA\Programs\PDF Familiar\PDFCasero.exe"
+          if (-not (Test-Path $exe)) { Write-Error "No se ha instalado en $exe"; exit 1 }
+          $p = Start-Process $exe -ArgumentList '--autoprueba', "$PWD\instalado.txt" -Wait -PassThru
+          Get-Content instalado.txt
+          if ($p.ExitCode -ne 0) { exit 1 }
+          Start-Process "$env:LOCALAPPDATA\Programs\PDF Familiar\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES' -Wait
+          # El desinstalador se copia a otra carpeta y sigue solo: esperamos a que termine
+          for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $exe) { Write-Error "La desinstalación ha dejado el programa"; exit 1 }
+          "Instalación y desinstalación correctas"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PDFCasero-Instalador-${{ steps.version.outputs.valor }}
+          path: packaging/salida/*.exe
+          if-no-files-found: error
+      - name: Publicar versión
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create ${{ github.ref_name }} packaging/salida/*.exe --title "PDF Familiar ${{ github.ref_name }}" --notes "Descarga el instalador, haz doble clic y sigue los pasos."

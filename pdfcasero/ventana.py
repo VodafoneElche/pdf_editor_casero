@@ -223,7 +223,7 @@ class Bienvenida(QWidget):
         fila.addWidget(etiqueta)
         actual = ventana.ajustes.value("tema", "gris")
         self.muestras = {}
-        for nombre, (texto, fondo, _, _, color) in TEMAS.items():
+        for nombre, (texto, fondo, _, _, color, _) in TEMAS.items():
             b = QToolButton()
             b.setObjectName("muestraTema")
             b.setCheckable(True)

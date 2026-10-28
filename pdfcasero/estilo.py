@@ -4,19 +4,27 @@ ACENTO = "#c4302b"
 
 # Colores de fondo que se eligen en la pantalla de inicio, como en un navegador:
 # nombre -> (nombre a la vista, fondo de la ventana, fondo detrás de las páginas,
-#            panel de miniaturas y pestañas, color del botón)
+#            panel de miniaturas y pestañas, color del botón, barra de menú: un tono más oscuro)
 TEMAS = {
-    "gris": ("Gris (el de siempre)", "#f5f5f7", "#e4e4e8", "#f0f0f3", "#c9c9cf"),
-    "rosa": ("Rosa suave", "#fbe9f1", "#f2d3e1", "#f8e0eb", "#f2a7c9"),
-    "rojo": ("Rojo suave", "#fbe7e6", "#f1cfcd", "#f7dcda", "#e88f8b"),
-    "naranja": ("Naranja suave", "#fdeedf", "#f5d9bd", "#fae4cd", "#f4b47a"),
-    "celeste": ("Azul celeste suave", "#e6f2fb", "#cbe2f3", "#d9eaf7", "#8ec8ef"),
+    "gris": ("Gris (el de siempre)", "#f5f5f7", "#e4e4e8", "#f0f0f3", "#c9c9cf", "#ffffff"),
+    "rosa": ("Rosa suave", "#fbe9f1", "#f2d3e1", "#f8e0eb", "#f2a7c9", "#f5c9dc"),
+    "rojo": ("Rojo suave", "#fbe7e6", "#f1cfcd", "#f7dcda", "#e88f8b", "#f1bebb"),
+    "naranja": ("Naranja suave", "#fdeedf", "#f5d9bd", "#fae4cd", "#f4b47a", "#f7cfa8"),
+    "celeste": ("Azul celeste suave", "#e6f2fb", "#cbe2f3", "#d9eaf7", "#8ec8ef", "#bcdcf3"),
 }
 
 
 def hoja_estilo(tema: str = "gris") -> str:
-    _, fondo, visor, panel, _ = TEMAS.get(tema, TEMAS["gris"])
-    return HOJA_ESTILO.replace("#f5f5f7", fondo).replace("#e4e4e8", visor).replace("#f0f0f3", panel)
+    _, fondo, visor, panel, _, barra = TEMAS.get(tema, TEMAS["gris"])
+    hoja = HOJA_ESTILO.replace("#f5f5f7", fondo).replace("#e4e4e8", visor).replace("#f0f0f3", panel)
+    if tema in TEMAS and tema != "gris":
+        # La barra de menú del mismo color, un tono más oscuro, para diferenciarla
+        hoja += (
+            f"QToolBar#barraPrincipal, QToolBar#barraDibujo, QToolBar#barraFormulario {{ background: {barra}; }}\n"
+            "QToolBar QToolButton:hover { background: rgba(0, 0, 0, 0.07); }\n"
+            "QToolBar QToolButton:pressed { background: rgba(0, 0, 0, 0.12); }\n"
+        )
+    return hoja
 
 
 HOJA_ESTILO = f"""

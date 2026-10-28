@@ -98,3 +98,44 @@ def test_inicio_colores_y_recientes(ventana, tmp_path, monkeypatch):
     lista = ventana.bienvenida.lista
     lista.itemClicked.emit(lista.item(0))
     assert ventana.doc is not None and ventana.doc.ruta.name == "reciente.pdf"
+
+
+def test_proteger_con_contrasena(ventana, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+
+    from pdfcasero import ventana as modulo
+    from pdfcasero.documento import ContrasenaNecesaria, Documento
+
+    ruta = pdf(tmp_path, "privado", 2)
+    assert ventana.abrir(ruta)
+    assert ventana.acc_proteger.isEnabled()
+    monkeypatch.setattr(modulo.DialogoContrasena, "pedir", classmethod(lambda cls, padre: "clave1234"))
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    ventana.proteger_con_contrasena()
+    # El archivo ya pide la contraseña, y con ella se abre y se lee
+    assert pymupdf.open(ruta).needs_pass
+    with pytest.raises(ContrasenaNecesaria):
+        Documento(ruta)
+    assert Documento(ruta, "clave1234").num_paginas == 2
+    # La app sigue con el PDF abierto y sabe que está protegido
+    assert ventana.doc.protegido and ventana.doc.num_paginas == 2
+    # Lo que se envía a Google o a Word va sin contraseña
+    assert not pymupdf.open(stream=ventana.doc.copia_en_memoria(), filetype="pdf").needs_pass
+    # Y se puede quitar
+    ventana.doc.poner_contrasena(None)
+    ventana.guardar()
+    assert not pymupdf.open(ruta).needs_pass and not ventana.doc.protegido
+
+
+def test_dialogo_contrasena_comprueba_las_dos(ventana):
+    from pdfcasero.ventana import DialogoContrasena
+
+    d = DialogoContrasena(ventana)
+    d.clave.setText("abcd1")
+    d.repetir.setText("abcd2")
+    d._aceptar()
+    assert "no coinciden" in d.aviso.text() and not d.result()
+    d.clave.setText("ab")
+    d.repetir.setText("ab")
+    d._aceptar()
+    assert "4 caracteres" in d.aviso.text()

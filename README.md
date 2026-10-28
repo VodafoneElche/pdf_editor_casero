@@ -17,6 +17,7 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | Extra | Exportar a Word (.docx) para Google Docs e importar .docx como PDF | Hecho |
 | Extra | Cuenta de Google: enviar a Google Docs u Hojas de cálculo y traer de vuelta como PDF | Hecho |
 | Extra | Varios PDF abiertos a la vez, cada uno en su pestaña (como en Adobe) | Hecho |
+| Extra | Proteger un PDF con contraseña (cifrado AES de 256 bits), cambiarla o quitarla: en Más → Proteger con contraseña | Hecho |
 | Extra | Logotipo (PF en un corazón) y color de fondo a elegir en la pantalla de inicio: gris, rosa, rojo, naranja o celeste suaves | Hecho |
 | 7. Instalador | Un único `.exe` con todo incluido | Hecho |
 

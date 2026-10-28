@@ -9,6 +9,9 @@ from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QImage, QIntVali
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
     QComboBox,
     QFileDialog,
     QFrame,
@@ -169,6 +172,51 @@ class ListaMiniaturas(QListWidget):
             self.borrarPulsado.emit()
         else:
             super().keyPressEvent(e)
+
+
+class DialogoContrasena(QDialog):
+    """Pide la contraseña dos veces (para no equivocarse al escribirla)."""
+
+    def __init__(self, padre):
+        super().__init__(padre)
+        self.setWindowTitle("Proteger con contraseña")
+        lay = QVBoxLayout(self)
+        lay.addWidget(QLabel("El PDF pedirá esta contraseña cada vez que se abra."))
+        self.clave = QLineEdit()
+        self.clave.setEchoMode(QLineEdit.EchoMode.Password)
+        self.clave.setPlaceholderText("Contraseña")
+        self.repetir = QLineEdit()
+        self.repetir.setEchoMode(QLineEdit.EchoMode.Password)
+        self.repetir.setPlaceholderText("Repite la contraseña")
+        self.ver = QCheckBox("Ver la contraseña")
+        self.ver.toggled.connect(self._mostrar)
+        self.aviso = QLabel("")
+        self.aviso.setStyleSheet("color: #c4302b;")
+        botones = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        botones.button(QDialogButtonBox.StandardButton.Ok).setText("Proteger y guardar")
+        botones.button(QDialogButtonBox.StandardButton.Cancel).setText("Cancelar")
+        botones.accepted.connect(self._aceptar)
+        botones.rejected.connect(self.reject)
+        for w in (self.clave, self.repetir, self.ver, self.aviso, botones):
+            lay.addWidget(w)
+
+    def _mostrar(self, si: bool):
+        modo = QLineEdit.EchoMode.Normal if si else QLineEdit.EchoMode.Password
+        self.clave.setEchoMode(modo)
+        self.repetir.setEchoMode(modo)
+
+    def _aceptar(self):
+        if len(self.clave.text()) < 4:
+            self.aviso.setText("La contraseña tiene que tener al menos 4 caracteres.")
+        elif self.clave.text() != self.repetir.text():
+            self.aviso.setText("Las dos contraseñas no coinciden.")
+        else:
+            self.accept()
+
+    @classmethod
+    def pedir(cls, padre) -> str | None:
+        d = cls(padre)
+        return d.clave.text() if d.exec() == QDialog.DialogCode.Accepted else None
 
 
 class Bienvenida(QWidget):
@@ -462,11 +510,15 @@ class VentanaPrincipal(QMainWindow):
         self._accion("Pestaña anterior", None, QKeySequence("Ctrl+Shift+Tab"), lambda: self._pasar_pestana(-1))
         self.acc_pantalla = self._accion("Pantalla completa", "ViewFullscreen", QKeySequence("F11"), self._pantalla_completa)
         self.acc_acerca = self._accion("Acerca de", "HelpAbout", [], self._acerca_de)
+        self.acc_proteger = self._accion(
+            "Proteger con contraseña…", "SecurityHigh", [], self.proteger_con_contrasena,
+            "Que el PDF pida una contraseña para abrirlo",
+        )
         for a, teclas in ((self.acc_siguiente, ["Ctrl+Right"]), (self.acc_anterior, ["Ctrl+Left"])):
             a.setShortcuts([QKeySequence(t) for t in teclas])
         self._acciones_doc = [
             self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_formulario, self.acc_word, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar, self.acc_girar_izq, self.acc_girar_der,
-            self.acc_ancho, self.acc_completa, self.acc_buscar, self.acc_cerrar,
+            self.acc_ancho, self.acc_completa, self.acc_buscar, self.acc_cerrar, self.acc_proteger,
         ]
 
     def _crear_barra(self):
@@ -479,7 +531,7 @@ class VentanaPrincipal(QMainWindow):
 
         # Menú "Más" al principio, como en Acrobat: lo que se usa menos, para que la barra quepa
         menu = QMenu(self)
-        for a in (self.acc_imprimir, self.acc_ancho, self.acc_completa, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
+        for a in (self.acc_imprimir, self.acc_proteger, self.acc_ancho, self.acc_completa, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
             menu.addAction(a)
         self.menu_paginas = self._crear_menu_paginas()
         self.boton_paginas.setMenu(self.menu_paginas)
@@ -837,6 +889,43 @@ class VentanaPrincipal(QMainWindow):
         if not self.doc.modificado:
             self.statusBar().showMessage("No hay cambios que guardar", 4000)
             return True
+        return self._guardar_en(None)
+
+    def proteger_con_contrasena(self):
+        """Pone (o quita) la contraseña que pide el PDF al abrirse y lo guarda."""
+        if not self.doc:
+            return
+        if self.doc.protegido:
+            caja = QMessageBox(self)
+            caja.setWindowTitle("Contraseña del PDF")
+            caja.setIcon(QMessageBox.Icon.Question)
+            caja.setText("Este PDF ya pide contraseña para abrirlo. ¿Qué quieres hacer?")
+            cambiar = caja.addButton("Cambiar la contraseña", QMessageBox.ButtonRole.AcceptRole)
+            quitar = caja.addButton("Quitar la contraseña", QMessageBox.ButtonRole.DestructiveRole)
+            caja.addButton("Cancelar", QMessageBox.ButtonRole.RejectRole)
+            caja.exec()
+            if caja.clickedButton() is quitar:
+                self.doc.poner_contrasena(None)
+                if self._guardar_tras_clave():
+                    QMessageBox.information(self, "Contraseña quitada", "El PDF ya se abre sin contraseña.")
+                return
+            if caja.clickedButton() is not cambiar:
+                return
+        clave = DialogoContrasena.pedir(self)
+        if not clave:
+            return
+        self.doc.poner_contrasena(clave)
+        if self._guardar_tras_clave():
+            QMessageBox.information(
+                self, "PDF protegido",
+                f"Listo: «{self.doc.ruta.name}» pide la contraseña para abrirse, aquí y en cualquier "
+                "otro programa (Adobe, el navegador, el móvil…).\n\n"
+                "Apúntala en un sitio seguro: si se olvida, no hay forma de recuperar el PDF.",
+            )
+
+    def _guardar_tras_clave(self) -> bool:
+        if getattr(self.doc, "nuevo", False):
+            return self.guardar_como()
         return self._guardar_en(None)
 
     def guardar_como(self) -> bool:

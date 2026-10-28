@@ -100,7 +100,20 @@ class Documento:
 
     def copia_en_memoria(self) -> bytes:
         """El PDF tal como está ahora, para trabajar con él en otro hilo sin tocar este."""
-        return self._doc.tobytes()
+        return self._doc.tobytes(encryption=pymupdf.PDF_ENCRYPT_NONE)  # sin clave: es para usarla dentro
+
+    # --- Contraseña -----------------------------------------------------------
+    @property
+    def protegido(self) -> bool:
+        """¿Pide contraseña para abrirlo (contando un cambio aún sin guardar)?"""
+        if getattr(self, "_nueva_clave", None) is not None:
+            return self._nueva_clave != ""
+        return bool(self._doc.is_encrypted or self._doc.needs_pass or self._contrasena)
+
+    def poner_contrasena(self, contrasena: str | None) -> None:
+        """Al guardar, el PDF pedirá esta contraseña para abrirse (None la quita)."""
+        self._nueva_clave = contrasena or ""
+        self.modificado = True
 
     def aplicar_ocr(self, n: int, palabras) -> None:
         """Añade a la página n el texto reconocido por el OCR (invisible, pero buscable)."""
@@ -350,7 +363,21 @@ class Documento:
                 pass
             self._fuentes_nuevas = False
         try:
-            self._doc.save(tmp, garbage=3, deflate=True)
+            clave = getattr(self, "_nueva_clave", None)
+            if clave:
+                # Cifrado AES de 256 bits: sin la contraseña no se puede abrir ni leer
+                self._doc.save(
+                    tmp, garbage=3, deflate=True, encryption=pymupdf.PDF_ENCRYPT_AES_256,
+                    user_pw=clave, owner_pw=clave,
+                    permissions=-1,  # con la contraseña se puede hacer todo (imprimir, copiar…)
+                )
+                self._contrasena = clave
+            elif clave == "":
+                self._doc.save(tmp, garbage=3, deflate=True, encryption=pymupdf.PDF_ENCRYPT_NONE)
+                self._contrasena = None
+            else:
+                self._doc.save(tmp, garbage=3, deflate=True)
+            self._nueva_clave = None
             if mismo:
                 # Windows no deja reemplazar un archivo abierto: cerrar, reemplazar y reabrir
                 self._doc.close()

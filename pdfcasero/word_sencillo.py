@@ -234,7 +234,18 @@ def _columnas(piezas, hueco=40):
             juntos[-1][2].extend(t[2])
         else:
             juntos.append(t)
-    return juntos
+    # Lo que está dentro de una misma caja de color (una cabecera gris de lado a lado) va
+    # en la misma columna: partida, Google Docs solo pinta de gris un trozo
+    unidos = []
+    for t in juntos:
+        cajas = {tuple(c) for c in (getattr(p, "caja", None) for p in t[2]) if c is not None}
+        if unidos and cajas & unidos[-1][3]:
+            unidos[-1][1] = max(unidos[-1][1], t[1])
+            unidos[-1][2].extend(t[2])
+            unidos[-1][3] |= cajas
+        else:
+            unidos.append([t[0], t[1], list(t[2]), cajas])
+    return [u[:3] for u in unidos]
 
 
 def _partir_etiquetas(columna):

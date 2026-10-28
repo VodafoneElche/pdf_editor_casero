@@ -16,6 +16,18 @@ from .ventana import VentanaPrincipal
 ICONO = Path(__file__).resolve().parent / "recursos" / "icono.png"
 
 
+def traducir(app: QApplication) -> None:
+    """Los botones y avisos que trae Qt (Guardar, Descartar, Cancelar, Sí, No…) en español."""
+    from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
+
+    QLocale.setDefault(QLocale(QLocale.Language.Spanish, QLocale.Country.Spain))
+    carpeta = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    traductor = QTranslator(app)
+    if traductor.load("qtbase_es", carpeta):
+        app.installTranslator(traductor)
+        app._traductor = traductor  # que no se borre
+
+
 def preparar_aspecto(app: QApplication) -> None:
     """Siempre en claro, también si Windows está en modo oscuro.
 
@@ -40,6 +52,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("PDF Familiar")
     app.setOrganizationName("PDFCasero")
+    traducir(app)
     preparar_aspecto(app)
     app.setWindowIcon(QIcon(str(ICONO)))
     ventana = VentanaPrincipal()

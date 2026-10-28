@@ -139,3 +139,15 @@ def test_dialogo_contrasena_comprueba_las_dos(ventana):
     d.repetir.setText("ab")
     d._aceptar()
     assert "4 caracteres" in d.aviso.text()
+
+
+def test_botones_de_qt_en_espanol(ventana):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from pdfcasero.__main__ import traducir
+
+    traducir(QApplication.instance())
+    caja = QMessageBox(QMessageBox.Icon.Question, "¿Guardar?", "Hay cambios",
+                       QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
+    textos = {caja.button(b).text().replace("&", "") for b in (QMessageBox.StandardButton.Save, QMessageBox.StandardButton.Discard, QMessageBox.StandardButton.Cancel)}
+    assert textos == {"Guardar", "Descartar", "Cancelar"}, textos

@@ -88,6 +88,12 @@ def ejecutar(salida: str) -> int:
         from .ventana import VentanaPrincipal
 
         app = QApplication.instance() or QApplication(sys.argv)
+        from .__main__ import traducir
+
+        traducir(app)
+        if not getattr(app, "_traductor", None):
+            raise RuntimeError("No se encuentra la traducción al español de Qt (qtbase_es.qm)")
+        lineas.append("Español ok (botones de Qt traducidos)")
         ventana = VentanaPrincipal()
         ventana.show()
         QTimer.singleShot(500, app.quit)

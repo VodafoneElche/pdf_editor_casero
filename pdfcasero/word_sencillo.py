@@ -253,7 +253,19 @@ def _partir_etiquetas(columna):
     etiquetas = [f[0] for f in filas]
     if any(p.rect.x1 > ancla - 2 for p in etiquetas):
         return [columna]
-    valores = [f[1] for f in dobles]
+    # Las dos celdas con los mismos renglones a la misma altura: donde falta el valor va
+    # un renglón en blanco, para que Google Docs no suba los valores siguientes
+    valores = []
+    for f in filas:
+        etiqueta = f[0]
+        if len(f) == 2:
+            valor = f[1]
+            valor.rect = pymupdf.Rect(valor.rect.x0, etiqueta.rect.y0, valor.rect.x1, etiqueta.rect.y1)
+        else:
+            blanco = dict(etiqueta.datos[0], text="\u00a0")
+            valor = Pieza("texto", (ancla, etiqueta.rect.y0, ancla + 4, etiqueta.rect.y1), [blanco])
+            valor.caja = None
+        valores.append(valor)
     for p in etiquetas + valores:
         p.suelto = True  # cada etiqueta y cada valor en su renglón, sin juntarlos en párrafos
     return [

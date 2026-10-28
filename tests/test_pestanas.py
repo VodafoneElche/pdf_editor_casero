@@ -77,12 +77,20 @@ def test_inicio_colores_y_recientes(ventana, tmp_path, monkeypatch):
 
     guardado = {}
     monkeypatch.setattr(type(ventana.ajustes), "setValue", lambda self, k, v: guardado.__setitem__(k, v))
-    # Los botones de color cambian el fondo de toda la app y se recuerdan
+    monkeypatch.setattr(type(ventana.ajustes), "value", lambda self, k, d=None, **_: guardado.get(k, d))
+    hoja = lambda: QApplication.instance().styleSheet()  # noqa: E731
+    # Los botones de color cambian el fondo de toda la app y se recuerdan; la barra lo sigue
     assert set(ventana.bienvenida.muestras) == {"gris", "rosa", "rojo", "naranja", "celeste"}
     ventana.bienvenida.muestras["celeste"].click()
-    assert guardado["tema"] == "celeste" and "#e6f2fb" in QApplication.instance().styleSheet()
+    assert guardado["tema"] == "celeste" and "#e6f2fb" in hoja() and "#bcdcf3" in hoja()
+    assert ventana.bienvenida.muestras_barra["celeste"].isChecked()
+    # La barra de menú se puede elegir aparte: fondo celeste con barra rosa
+    ventana.bienvenida.muestras_barra["rosa"].click()
+    assert guardado["barra"] == "rosa" and "#e6f2fb" in hoja() and "#f5c9dc" in hoja() and "#bcdcf3" not in hoja()
     ventana.bienvenida.muestras["gris"].click()
-    assert "#f5f5f7" in QApplication.instance().styleSheet()
+    assert "#f5f5f7" in hoja() and "#f5c9dc" in hoja()
+    ventana.bienvenida.muestras_barra["gris"].click()
+    assert "#f5c9dc" not in hoja()
 
     # Un clic en un reciente lo abre
     ruta = pdf(tmp_path, "reciente", 1)

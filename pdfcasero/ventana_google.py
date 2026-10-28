@@ -131,7 +131,7 @@ class ControlGoogle:
         m.clear()
         enviar = m.addAction("Enviar a Google Docs para editar", self.enviar)
         enviar.setEnabled(v.doc is not None)
-        hoja = m.addAction("Enviar tablas a Hojas de cálculo de Google", self.enviar_hoja)
+        hoja = m.addAction("Enviar a Hojas de cálculo de Google", self.enviar_hoja)
         hoja.setEnabled(v.doc is not None)
         m.addAction("Traer de Google como PDF…", self.traer)
         m.addSeparator()
@@ -236,13 +236,13 @@ class ControlGoogle:
         xlsx = Path(tempfile.mkdtemp(prefix="pdfcasero_")) / f"{nombre}.xlsx"
         try:
             tablas = con_espera(
-                v, "Enviar a Hojas de cálculo", "Buscando las tablas del PDF…",
+                v, "Enviar a Hojas de cálculo", "Pasando cada dato a su casilla…",
                 conversion.pdf_a_excel, v.doc.copia_en_memoria(), str(xlsx), cancelable=True,
             )
         except InterruptedError:
             return
         except Exception as e:
-            QMessageBox.critical(v, "Enviar a Hojas de cálculo", f"No se han podido sacar las tablas.\n\n{e}")
+            QMessageBox.critical(v, "Enviar a Hojas de cálculo", f"No se ha podido pasar a hoja de cálculo.\n\n{e}")
             return
         subido = self._con_cuenta(
             "Enviar a Hojas de cálculo", f"Subiendo «{nombre}» a tu Google Drive…", self.cuenta.subir_como_hoja, str(xlsx), nombre
@@ -251,10 +251,7 @@ class ControlGoogle:
         if not subido:
             return
         webbrowser.open(subido.get("webViewLink") or f"https://docs.google.com/spreadsheets/d/{subido['id']}/edit")
-        if tablas:
-            detalle = f"Se han pasado {tablas} tablas (una pestaña por página)."
-        else:
-            detalle = "No se han encontrado tablas: cada línea de texto va en una fila."
+        detalle = "Cada página va en su pestaña, con cada dato en su casilla y las imágenes encima."
         QMessageBox.information(
             v, "Enviado a Hojas de cálculo",
             f"«{nombre}» se ha abierto en Hojas de cálculo de Google ({self.cuenta.correo}).\n{detalle}\n\n"
@@ -272,7 +269,7 @@ class ControlGoogle:
             QMessageBox.information(
                 v, "Traer de Google",
                 "Todavía no hay documentos enviados desde PDF Casero con esta cuenta.\n\n"
-                "Abre un PDF y pulsa Google → Enviar a Google Docs o Enviar tablas a Hojas de cálculo.",
+                "Abre un PDF y pulsa Google → Enviar a Google Docs o Enviar a Hojas de cálculo.",
             )
             return
         dialogo = ElegirDocumento(v, documentos, self.cuenta.correo)

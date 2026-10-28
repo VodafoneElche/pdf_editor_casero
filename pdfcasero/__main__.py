@@ -28,7 +28,8 @@ def preparar_aspecto(app: QApplication) -> None:
         pass
     app.setStyle("Fusion")
     app.setPalette(app.style().standardPalette())
-    app.setStyleSheet(hoja_estilo(QSettings("PDFCasero", "PDFCasero").value("tema", "gris")))
+    ajustes = QSettings("PDFCasero", "PDFCasero")
+    app.setStyleSheet(hoja_estilo(ajustes.value("tema", "gris"), ajustes.value("barra", None)))
 
 
 def main() -> int:

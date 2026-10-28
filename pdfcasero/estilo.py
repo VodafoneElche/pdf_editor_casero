@@ -14,13 +14,16 @@ TEMAS = {
 }
 
 
-def hoja_estilo(tema: str = "gris") -> str:
-    _, fondo, visor, panel, _, barra = TEMAS.get(tema, TEMAS["gris"])
+def hoja_estilo(tema: str = "gris", barra: str | None = None) -> str:
+    """La hoja de estilo con el color de fondo `tema` y el de la barra de menú `barra`
+    (si no se elige, la barra va del mismo color que el fondo, un tono más oscuro)."""
+    _, fondo, visor, panel, _, _ = TEMAS.get(tema, TEMAS["gris"])
+    barra = barra if barra in TEMAS else tema if tema in TEMAS else "gris"
+    color_barra = TEMAS[barra][5]
     hoja = HOJA_ESTILO.replace("#f5f5f7", fondo).replace("#e4e4e8", visor).replace("#f0f0f3", panel)
-    if tema in TEMAS and tema != "gris":
-        # La barra de menú del mismo color, un tono más oscuro, para diferenciarla
+    if barra != "gris":
         hoja += (
-            f"QToolBar#barraPrincipal, QToolBar#barraDibujo, QToolBar#barraFormulario {{ background: {barra}; }}\n"
+            f"QToolBar#barraPrincipal, QToolBar#barraDibujo, QToolBar#barraFormulario {{ background: {color_barra}; }}\n"
             "QToolBar QToolButton:hover { background: rgba(0, 0, 0, 0.07); }\n"
             "QToolBar QToolButton:pressed { background: rgba(0, 0, 0, 0.12); }\n"
         )

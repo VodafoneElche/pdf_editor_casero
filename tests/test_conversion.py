@@ -57,22 +57,44 @@ def test_tablas_del_pdf_a_hoja_de_calculo(tmp_path):
         pagina.insert_htmlbox(pymupdf.Rect(55, 55 + 30 * i, 245, 78 + 30 * i), a)
         pagina.insert_htmlbox(pymupdf.Rect(255, 55 + 30 * i, 445, 78 + 30 * i), b)
     destino = tmp_path / "tablas.xlsx"
-    assert pdf_a_excel(doc.tobytes(), str(destino)) == 1
+    assert pdf_a_excel(doc.tobytes(), str(destino)) == 6
     hoja = load_workbook(destino)["Página 1"]
-    filas = [f for f in hoja.iter_rows(values_only=True) if any(f)]
-    assert filas == [("Concepto", "Importe"), ("Base imponible", 824.1), ("Total a pagar", 1028.26)]
+    filas = [tuple(v for v in f if v is not None) for f in hoja.iter_rows(values_only=True)]
+    assert [f for f in filas if f] == [("Concepto", "Importe"), ("Base imponible", 824.1), ("Total a pagar", 1028.26)]
 
 
-def test_sin_tablas_cada_linea_en_una_fila(tmp_path):
+def test_hoja_como_ilovepdf_casillas_fondo_imagen_y_codigo_de_barras(tmp_path):
+    """Cada dato en su casilla, a su altura; el fondo gris pintado; las imágenes encima;
+    y los caracteres raros de un código de barras no rompen el .xlsx."""
     from openpyxl import load_workbook
 
     from pdfcasero.conversion import pdf_a_excel
 
     doc = pymupdf.open()
-    doc.new_page().insert_text((72, 72), "Hola\nAdiós")
-    destino = tmp_path / "texto.xlsx"
-    assert pdf_a_excel(doc.tobytes(), str(destino)) == 0
-    assert [f[0] for f in load_workbook(destino)["Página 1"].iter_rows(values_only=True)] == ["Hola", "Adiós"]
+    p = doc.new_page()
+    foto = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 20), False)
+    foto.set_rect(foto.irect, (200, 30, 30))
+    p.insert_image(pymupdf.Rect(400, 40, 520, 80), pixmap=foto)
+    p.insert_text((50, 120), "Nº de cuenta:", fontsize=9)
+    p.insert_text((160, 120), "928912945", fontsize=9)
+    p.insert_text((50, 134), "Fecha:", fontsize=9)
+    p.insert_text((160, 134), "01/09/2025", fontsize=9)
+    p.draw_rect(pymupdf.Rect(45, 160, 300, 180), color=None, fill=(0.7, 0.7, 0.7))
+    p.insert_text((50, 173), "Total a Pagar", fontsize=9)
+    p.insert_text((290 - pymupdf.get_text_length("1.028,26", fontsize=9), 173), "1.028,26", fontsize=9)
+    p.insert_text((50, 220), "\x0c\x1cFIN", fontsize=9)
+    destino = tmp_path / "factura.xlsx"
+    pdf_a_excel(doc.tobytes(), str(destino))
+    hoja = load_workbook(destino)["Página 1"]
+    casillas = {c.value: c for f in hoja.iter_rows() for c in f if c.value is not None}
+    cuenta, numero = casillas["Nº de cuenta:"], casillas["928912945"]
+    assert cuenta.row == numero.row and numero.column > cuenta.column
+    assert casillas["Fecha:"].row == cuenta.row + 1
+    total = casillas[1028.26]
+    assert total.row == casillas["Total a Pagar"].row and total.alignment.horizontal == "right"
+    assert total.fill.fgColor.rgb.endswith("B2B2B2") and casillas["Total a Pagar"].fill.fgColor.rgb.endswith("B2B2B2")
+    assert "FIN" in casillas
+    assert len(hoja._images) == 1
 
 
 def test_preparar_para_word_texto_girado_como_imagen_y_fuentes(tmp_path):

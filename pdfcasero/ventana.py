@@ -211,30 +211,47 @@ class Bienvenida(QWidget):
         lay.addWidget(self._muestras_de_color(ventana), 0, Qt.AlignmentFlag.AlignHCenter)
 
     def _muestras_de_color(self, ventana: "VentanaPrincipal") -> QWidget:
-        """Botones redondos para cambiar el color de fondo, como en un navegador."""
+        """Botones redondos para cambiar los colores, como en un navegador: una fila para el
+        fondo y otra para la barra de menú (los mismos colores, un tono más oscuro)."""
+        from PySide6.QtWidgets import QButtonGroup, QGridLayout
+
         from .estilo import TEMAS
 
         caja = QWidget()
-        fila = QHBoxLayout(caja)
-        fila.setContentsMargins(0, 16, 0, 0)
-        fila.setSpacing(10)
-        etiqueta = QLabel("Color de fondo:")
-        etiqueta.setObjectName("textoBienvenida")
-        fila.addWidget(etiqueta)
-        actual = ventana.ajustes.value("tema", "gris")
-        self.muestras = {}
-        for nombre, (texto, fondo, _, _, color, _) in TEMAS.items():
-            b = QToolButton()
-            b.setObjectName("muestraTema")
-            b.setCheckable(True)
-            b.setAutoExclusive(True)
-            b.setChecked(nombre == actual)
-            b.setToolTip(texto)
-            b.setFixedSize(32, 32)
-            b.setStyleSheet(f"QToolButton {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {fondo}, stop:0.5 {fondo}, stop:0.51 {color}, stop:1 {color}); }}")
-            b.clicked.connect(lambda _=False, n=nombre: ventana.cambiar_tema(n))
-            fila.addWidget(b)
-            self.muestras[nombre] = b
+        rejilla = QGridLayout(caja)
+        rejilla.setContentsMargins(0, 16, 0, 0)
+        rejilla.setHorizontalSpacing(10)
+        rejilla.setVerticalSpacing(8)
+        tema = ventana.ajustes.value("tema", "gris")
+        barra = ventana.ajustes.value("barra", None) or tema
+        self.muestras, self.muestras_barra = {}, {}
+        for fila, (rotulo, actual, destino, al_pulsar) in enumerate(
+            [
+                ("Color de fondo:", tema, self.muestras, ventana.cambiar_tema),
+                ("Color de la barra:", barra, self.muestras_barra, ventana.cambiar_barra),
+            ]
+        ):
+            etiqueta = QLabel(rotulo)
+            etiqueta.setObjectName("textoBienvenida")
+            rejilla.addWidget(etiqueta, fila, 0, Qt.AlignmentFlag.AlignRight)
+            grupo = QButtonGroup(caja)
+            for k, (nombre, (texto, fondo, _, _, color, oscuro)) in enumerate(TEMAS.items()):
+                b = QToolButton()
+                b.setObjectName("muestraTema")
+                b.setCheckable(True)
+                b.setChecked(nombre == actual)
+                b.setFixedSize(32, 32)
+                if destino is self.muestras:
+                    b.setToolTip(texto)
+                    pintura = f"qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {fondo}, stop:0.5 {fondo}, stop:0.51 {color}, stop:1 {color})"
+                else:
+                    b.setToolTip(f"Barra: {texto[0].lower() + texto[1:]}")
+                    pintura = oscuro if nombre != "gris" else "#ffffff"
+                b.setStyleSheet(f"QToolButton {{ background: {pintura}; }}")
+                b.clicked.connect(lambda _=False, n=nombre, f=al_pulsar: f(n))
+                grupo.addButton(b)
+                rejilla.addWidget(b, fila, k + 1)
+                destino[nombre] = b
         return caja
 
     def actualizar(self, recientes: list[str]):
@@ -864,10 +881,22 @@ class VentanaPrincipal(QMainWindow):
 
     # --- Recientes --------------------------------------------------------
     def cambiar_tema(self, nombre: str):
+        """Color de fondo. Si la barra no se ha elegido aparte, la barra lo sigue."""
+        self.ajustes.setValue("tema", nombre)
+        if not self.ajustes.value("barra", None):
+            self.bienvenida.muestras_barra[nombre].setChecked(True)
+        self._aplicar_colores()
+
+    def cambiar_barra(self, nombre: str):
+        self.ajustes.setValue("barra", nombre)
+        self._aplicar_colores()
+
+    def _aplicar_colores(self):
         from .estilo import hoja_estilo
 
-        self.ajustes.setValue("tema", nombre)
-        QApplication.instance().setStyleSheet(hoja_estilo(nombre))
+        QApplication.instance().setStyleSheet(
+            hoja_estilo(self.ajustes.value("tema", "gris"), self.ajustes.value("barra", None))
+        )
 
     def recientes(self) -> list[str]:
         valor = self.ajustes.value("recientes", [])

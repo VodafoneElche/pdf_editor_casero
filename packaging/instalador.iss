@@ -33,7 +33,9 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 ChangesAssociations=yes
-CloseApplications=yes
+; PDF Casero se cierra solo antes de instalar (ver [Code]); así el instalador no se queda
+; esperando a que Windows libere los archivos de una versión que sigue abierta
+CloseApplications=no
 
 [Languages]
 Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
@@ -76,3 +78,23 @@ Root: HKA; Subkey: "Software\Classes\.pdf"; ValueType: string; ValueData: "PDFCa
 
 [Run]
 Filename: "{app}\{#Exe}"; Description: "{cm:LaunchProgram,{#Nombre}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+// Cierra PDF Casero (y los procesos que deja convirtiendo a Word o leyendo con el OCR)
+// antes de copiar los archivos nuevos.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Codigo: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#Exe}', '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+  Sleep(500);
+  Result := '';
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Codigo: Integer;
+begin
+  if CurUninstallStep = usUninstall then
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /T /IM {#Exe}', '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+end;

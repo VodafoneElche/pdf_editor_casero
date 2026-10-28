@@ -34,19 +34,26 @@ def test_factura_fluye_como_en_google_docs(tmp_path):
     assert avances == [(1, 1)]
     d = docx.Document(str(destino))
 
-    # Etiqueta y valor en el mismo renglón, separados por un tabulador
-    textos = [p.text for p in d.paragraphs]
-    for tabla in d.tables:
-        for celda in tabla._cells:
-            textos += [p.text for p in celda.paragraphs]
-    assert "Fecha de emisión:\t01/09/2025" in textos
-    # La dirección va en otra columna (tabla invisible), no mezclada con los datos
-    assert any("LAURA BARCELO" in c.text and "Fecha" not in c.text for t in d.tables for c in t._cells)
+    def filas(tablas):
+        for t in tablas:
+            for r in t.rows:
+                yield [c.text for c in r.cells], r
+            for c in t._cells:
+                yield from filas(c.tables)
 
-    # El total con el fondo gris y el importe en un tabulador a la derecha
-    total = next(p for p in d.paragraphs if p.text.strip().startswith("Total a Pagar"))
-    xml = total._p.xml
-    assert 'w:fill="B2B2B2"' in xml and 'w:val="right"' in xml
+    todas = list(filas(d.tables))
+    # Etiqueta y valor en la misma fila de una tabla sin bordes (Google Docs descoloca
+    # los tabuladores, así que no se usan)
+    assert any("Fecha de emisión:" in t and "01/09/2025" in t for t, _ in todas)
+    assert "<w:tab/>" not in d.element.xml
+    # La dirección va en otra columna, no mezclada con los datos
+    assert any(any("LAURA BARCELO" in c for c in t) and not any("Fecha" in c for c in t) for t, _ in todas)
+
+    # El total en su caja gris (celdas sombreadas) y el importe alineado a la derecha
+    texto, fila = next((t, r) for t, r in todas if "Total a Pagar" in t)
+    assert 'w:fill="B2B2B2"' in fila._tr.xml
+    importe = next(c for c in fila.cells if c.text == "1.028,26")
+    assert importe.paragraphs[0].alignment == 2
 
     # El texto girado del margen, en horizontal en el pie de página
     assert "Vodafone España" in d.sections[0].footer.paragraphs[0].text

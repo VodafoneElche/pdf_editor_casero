@@ -413,6 +413,92 @@ class Escritor:
             return pieza.rect.y1
         return pieza.rect.y0 + 1.15 * max(self._tamano(sp) for sp in pieza.datos)
 
+    def rejilla(self, contenedor, filas, x_izq, ancho, y_previo):
+        """Renglones en una tabla sin bordes: cada trozo en su celda, alineado como en el PDF."""
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+        caja = _caja_de(filas[0])
+        if caja is not None:
+            izquierda, derecha = max(caja.x0, x_izq), min(caja.x1, x_izq + ancho)
+            arriba = caja.y0
+        else:
+            izquierda = min(p.rect.x0 for f in filas for p in f)
+            derecha = x_izq + ancho
+            arriba = filas[0][0].rect.y0
+        if y_previo is not None and arriba - y_previo > 2:
+            self.contenedor_parrafo(contenedor, arriba - y_previo)
+        bordes = _columnas_rejilla(filas, izquierda, derecha)
+        # La sangría de la tabla va en una primera columna vacía: Google Docs y LibreOffice
+        # no respetan bien la sangría de las tablas
+        hueco_izq = izquierda - x_izq > 1.5
+        if hueco_izq:
+            bordes = [x_izq] + bordes
+        n = len(bordes) - 1
+        t = contenedor.add_table(rows=len(filas), cols=n)
+        t.autofit = False
+        _sin_bordes(t)
+        _margenes_celda(t)
+        rejilla = t._tbl.tblGrid.findall(qn("w:gridCol"))
+        for j in range(n):
+            rejilla[j].set(qn("w:w"), str(int((bordes[j + 1] - bordes[j]) * 20)))
+            for celda in t.columns[j].cells:
+                celda.width = self.Pt(bordes[j + 1] - bordes[j])
+        y = arriba
+        for k, fila in enumerate(filas):
+            espacio = max(0, min(fila[0].rect.y0 - y, MAX_ESPACIO)) if k or caja is not None else 0
+            celdas = t.rows[k].cells
+            usadas = {}
+            for pieza in fila:
+                primera_util = 1 if hueco_izq else 0
+                if _es_importe(pieza):  # el importe acaba en el borde derecho de su celda
+                    j = min(range(primera_util, n), key=lambda i: abs(bordes[i + 1] - pieza.rect.x1))
+                else:
+                    j = max([i for i in range(primera_util, n) if bordes[i] <= pieza.rect.x0 + 1] or [primera_util])
+                usadas.setdefault(j, []).append(pieza)
+            for j, piezas in usadas.items():
+                p = celdas[j].paragraphs[0]
+                for m, pieza in enumerate(piezas):
+                    if m:
+                        p.add_run(" ")
+                    if pieza.tipo == "imagen":  # logotipos uno al lado del otro
+                        self._foto(p, pieza, ancho_max=bordes[j + 1] - bordes[j])
+                    else:
+                        self.spans(p, pieza.datos)
+                primera, ultima = piezas[0], piezas[-1]
+                if len(fila) == 1 and caja is not None and abs(
+                    (primera.rect.x0 + primera.rect.x1) / 2 - (caja.x0 + caja.x1) / 2
+                ) < 6 and primera.rect.x0 - caja.x0 > 30:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER  # título centrado en su barra
+                elif _es_importe(primera) and len(piezas) == 1:
+                    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                    p.paragraph_format.right_indent = self.Pt(max(0, min(bordes[j + 1] - ultima.rect.x1, 40)))
+                else:
+                    p.paragraph_format.left_indent = self.Pt(max(0, min(primera.rect.x0 - bordes[j], 60)))
+            tamanos = [self._tamano(sp) for pz in fila if pz.tipo == "texto" for sp in pz.datos]
+            for j in range(n):
+                p = celdas[j].paragraphs[0]
+                p.paragraph_format.space_before = self.Pt(espacio)
+                _tamano_marca(p, max(tamanos) if tamanos else 8)
+                if caja is not None and not (hueco_izq and j == 0):
+                    self._sombrear(celdas[j]._tc, _fondo_caja(fila))
+            # Un trozo largo que no cabe en su celda ocupa también las vacías de su derecha
+            for j in sorted(usadas, reverse=True):
+                fin = max(p.rect.x1 for p in usadas[j])
+                hasta = j
+                while hasta + 1 < n and hasta + 1 not in usadas and bordes[hasta + 1] < fin - 2:
+                    hasta += 1
+                if hasta > j:
+                    celdas[j].merge(celdas[hasta])
+            y = max(self.fondo_renglon(p) for p in fila)
+        if caja is not None:
+            # Margen de abajo de la caja, también en gris
+            hueco = max(0, min(caja.y1 - y, MAX_ESPACIO))
+            if hueco > 1:
+                for celda in t.rows[-1].cells:
+                    celda.paragraphs[-1].paragraph_format.space_after = self.Pt(hueco)
+            return caja.y1
+        return y
+
     def contenedor_parrafo(self, contenedor, espacio):
         p = contenedor.add_paragraph()
         p.paragraph_format.space_before = self.Pt(max(0, min(espacio, MAX_ESPACIO)) - 2)
@@ -449,7 +535,11 @@ def _es_importe(pieza) -> bool:
     if pieza.tipo != "texto":
         return False
     texto = "".join(sp["text"] for sp in pieza.datos).strip()
-    return bool(texto) and len(texto) < 20 and re.fullmatch(r"[-+]?[\d.,:]+\s?(€|%)?", texto) is not None
+    # Importes de verdad (824,10 · 1.028,26€ · 21%), no números de cuenta ni fechas
+    return bool(texto) and len(texto) < 20 and (
+        re.fullmatch(r"[-+]?\d[\d.]*,\d+\s?(€|%)?", texto) is not None
+        or re.fullmatch(r"[-+]?[\d.,]+\s?(€|%)", texto) is not None
+    )
 
 
 def _tamano_marca(parrafo, tamano):
@@ -489,6 +579,55 @@ def _sin_bordes(tabla):
     tblPr.append(bordes)
 
 
+def _fondo_caja(fila):
+    return next((p.fondo for p in fila if p.fondo), None)
+
+
+def _caja_de(fila):
+    return next((getattr(p, "caja", None) for p in fila if getattr(p, "caja", None) is not None), None)
+
+
+def _es_de_rejilla(fila) -> bool:
+    if any(p.tipo != "texto" for p in fila):
+        return False  # logotipos y demás imágenes: en su párrafo (Google los coloca bien)
+    return len(fila) > 1 or _caja_de(fila) is not None
+
+
+def _columnas_rejilla(filas, izquierda, derecha):
+    """Bordes de las columnas de una rejilla: los textos empiezan donde empiezan y los
+    importes acaban donde acaban (alineados a la derecha), como en el PDF."""
+    anclas = []  # [es_importe, x, x0 mínimo, x1 máximo]
+    for fila in filas:
+        for p in fila:
+            derecha_p = _es_importe(p)
+            x = p.rect.x1 if derecha_p else p.rect.x0
+            for a in anclas:
+                if a[0] == derecha_p and abs(a[1] - x) < 5:
+                    a[2], a[3] = min(a[2], p.rect.x0), max(a[3], p.rect.x1)
+                    break
+            else:
+                anclas.append([derecha_p, x, p.rect.x0, p.rect.x1])
+    anclas.sort(key=lambda a: a[2])
+    # Si dos anclas se pisan, se quedan en una sola columna
+    juntas = []
+    for a in anclas:
+        if juntas and a[2] < juntas[-1][3] - 2:
+            juntas[-1][3] = max(juntas[-1][3], a[3])
+            juntas[-1][0] = juntas[-1][0] and a[0]
+        else:
+            juntas.append(list(a))
+    bordes = [izquierda]
+    for i in range(len(juntas) - 1):
+        a, b = juntas[i], juntas[i + 1]
+        corte = a[3] + 1 if a[0] or b[0] else b[2]
+        bordes.append(max(bordes[-1] + 8, min(corte, b[2])))
+    final = max(derecha, juntas[-1][3] + 1)
+    if juntas[-1][0] and final - juntas[-1][3] > 4:
+        bordes.append(juntas[-1][3] + 1)  # hueco vacío a la derecha del último importe
+    bordes.append(max(final, bordes[-1] + 8))
+    return bordes
+
+
 def _sigue_parrafo(anterior, fila, ancho):
     """¿Este renglón continúa el párrafo anterior (texto que ocupaba varias líneas)?"""
     if not anterior or len(anterior) != 1 or len(fila) != 1:
@@ -511,9 +650,31 @@ def _escribir_piezas(esc, contenedor, pagina, piezas, fondos, y_previo, x_izq, a
     elementos = [(f[0].rect.y0, "fila", f) for f in _filas_de_texto(textos)]
     elementos += [(p.rect.y0, p.tipo, p) for p in piezas if p.tipo == "tabla"]
     elementos.sort(key=lambda e: e[0])
+    # Renglones con varios trozos (etiqueta y valor, importes) o con fondo de color van en
+    # tablas sin bordes, como hace iLovePDF: Google Docs coloca mal los tabuladores
+    agrupados = []
+    for e in elementos:
+        if e[1] == "fila" and _es_de_rejilla(e[2]):
+            previo = agrupados[-1] if agrupados else None
+            if (
+                previo is not None and previo[1] == "rejilla"
+                and _caja_de(previo[2][-1]) == _caja_de(e[2])
+                and e[2][0].rect.y0 - max(p.rect.y1 for p in previo[2][-1]) < 20
+            ):
+                previo[2].append(e[2])
+                continue
+            agrupados.append((e[0], "rejilla", [e[2]]))
+        else:
+            agrupados.append(e)
+    elementos = agrupados
     parrafo, fila_anterior = None, None
     for y0, tipo, obj in elementos:
         hueco = y0 - y_previo if y_previo is not None else 0
+        if tipo == "rejilla":
+            parrafo, fila_anterior = None, None
+            esc._caja_previa = None
+            y_previo = esc.rejilla(contenedor, obj, x_izq, ancho, y_previo)
+            continue
         if tipo == "fila":
             esc.ancho_columna = ancho
             if parrafo is not None and _sigue_parrafo(fila_anterior, obj, ancho):
@@ -573,11 +734,19 @@ def pdf_a_word_sencillo(datos_pdf: bytes, destino: str, paginas: list[int] | Non
         y_previo = 18
         if k == 0 and doc.paragraphs and not doc.paragraphs[0].text:
             doc.paragraphs[0]._p.getparent().remove(doc.paragraphs[0]._p)
-        for franja in _franjas(piezas):
-            columnas = _columnas(franja["piezas"])
+        # Las franjas de una sola columna seguidas se escriben juntas, para que los renglones
+        # de una misma caja o lista de datos acaben en la misma tabla
+        pendientes = []
+        for franja in _franjas(piezas) + [None]:
+            columnas = _columnas(franja["piezas"]) if franja else []
             if len(columnas) == 1:
-                y_previo = _escribir_piezas(esc, doc, pagina, columnas[0][2], fondos, y_previo, margen_izq, ancho_util)
+                pendientes += columnas[0][2]
                 continue
+            if pendientes:
+                y_previo = _escribir_piezas(esc, doc, pagina, pendientes, fondos, y_previo, margen_izq, ancho_util)
+                pendientes = []
+            if franja is None:
+                break
             # Lado a lado: tabla invisible con una columna por cada bloque
             if franja["y0"] - y_previo > 2:
                 esc.contenedor_parrafo(doc, franja["y0"] - y_previo)

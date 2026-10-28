@@ -43,6 +43,11 @@ class Documento:
     def num_paginas(self) -> int:
         return self._doc.page_count
 
+    def apaisada(self, n: int) -> bool:
+        """La página se ve más ancha que alta (teniendo en cuenta si está girada)."""
+        r = self._doc[n].rect
+        return r.width > r.height
+
     @property
     def titulo(self) -> str:
         titulo = (self._doc.metadata or {}).get("title") or ""

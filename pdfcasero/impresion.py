@@ -280,11 +280,16 @@ def _orientacion_qt(o: int):
 
 def imprimir(doc: Documento, padre: QWidget, pagina_actual: int = 0) -> bool:
     dialogo = DialogoImprimir(doc, padre, pagina_actual)
-    if dialogo.exec() != QDialog.DialogCode.Accepted:
-        return False
-    paginas = dialogo.paginas()
-    if not paginas:
-        return False
-    dialogo._preparar_impresora()
-    imprimir_paginas(doc, dialogo.impresora, paginas, dialogo.orientacion_elegida())
-    return True
+    try:
+        if dialogo.exec() != QDialog.DialogCode.Accepted:
+            return False
+        paginas = dialogo.paginas()
+        if not paginas:
+            return False
+        dialogo._preparar_impresora()
+        imprimir_paginas(doc, dialogo.impresora, paginas, dialogo.orientacion_elegida())
+        return True
+    finally:
+        # Borrar ya la impresora y el cuadro, no al cerrar el programa
+        dialogo.impresora = None
+        dialogo.deleteLater()

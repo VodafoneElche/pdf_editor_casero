@@ -1,8 +1,10 @@
 """Imprimir con vista previa propia."""
 
+import gc
 import os
 
 import pymupdf
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -20,6 +22,24 @@ def documento(tmp_path):
     ruta = tmp_path / "doc.pdf"
     origen.save(ruta)
     return Documento(str(ruta))
+
+
+@pytest.fixture(autouse=True)
+def limpiar():
+    # Las impresoras (QPrinter) se borran aquí, mientras sigue viva la aplicación de Qt:
+    # si se quedan para el final, Python en Windows se cierra con error tras las pruebas
+    yield
+    from PySide6.QtWidgets import QApplication
+
+    gc.collect()
+    if QApplication.instance():
+        QApplication.instance().processEvents()
+
+
+def cerrar(d):
+    d.close()
+    d.impresora = None
+    d.deleteLater()
 
 
 def test_leer_rango():
@@ -44,7 +64,7 @@ def test_dialogo_con_vista_previa(tmp_path):
     d.rango.setText("xx")
     d.rango.textEdited.emit("xx")
     assert not d.boton_imprimir.isEnabled()
-    d.close()
+    cerrar(d)
     app.processEvents()
 
 
@@ -70,5 +90,7 @@ def test_imprime_a_pdf_girando_las_apaisadas(tmp_path):
         impreso = pymupdf.open(salida)
         assert len(impreso) == len(paginas)
         assert all((p.rect.width > p.rect.height) == esperado for p in impreso)
-        d.close()
+        impreso.close()
+        cerrar(d)
+        del impresora
     app.processEvents()

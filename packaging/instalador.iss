@@ -83,8 +83,15 @@ Root: HKA; Subkey: "Software\Classes\.pdf"; ValueType: string; ValueData: "PDFCa
 
 [Run]
 Filename: "{app}\{#Exe}"; Description: "{cm:LaunchProgram,{#Nombre}}"; Flags: nowait postinstall skipifsilent
+; Al actualizar desde la propia app (instalación silenciosa con /reabrir=si), se vuelve a abrir sola
+Filename: "{app}\{#Exe}"; Flags: nowait runasoriginaluser; Check: Reabrir
 
 [Code]
+function Reabrir: Boolean;
+begin
+  Result := ExpandConstant('{param:reabrir|no}') = 'si';
+end;
+
 // Cierra PDF Familiar (y los procesos que deja convirtiendo a Word o leyendo con el OCR)
 // antes de copiar los archivos nuevos.
 function PrepareToInstall(var NeedsRestart: Boolean): String;

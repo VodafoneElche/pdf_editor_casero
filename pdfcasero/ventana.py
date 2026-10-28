@@ -37,7 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__
-from . import conversion
+from . import actualizar, conversion
 from .dialogo_ocr import HiloOCR, asegurar_idiomas, elegir_paginas
 from .documento import ContrasenaNecesaria, Documento
 from .impresion import imprimir
@@ -433,6 +433,9 @@ class VentanaPrincipal(QMainWindow):
         geom = self.ajustes.value("geometria")
         if geom is not None:
             self.restoreGeometry(geom)
+        # Al abrir, mira en silencio si hay versión nueva (solo en la versión instalada)
+        if actualizar.instalada():
+            QTimer.singleShot(3000, self.buscar_actualizacion)
 
     # --- Interfaz ---------------------------------------------------------
     def _accion(self, texto, icono_nombre, atajo, funcion, consejo=None):
@@ -510,6 +513,10 @@ class VentanaPrincipal(QMainWindow):
         self._accion("Pestaña anterior", None, QKeySequence("Ctrl+Shift+Tab"), lambda: self._pasar_pestana(-1))
         self.acc_pantalla = self._accion("Pantalla completa", "ViewFullscreen", QKeySequence("F11"), self._pantalla_completa)
         self.acc_acerca = self._accion("Acerca de", "HelpAbout", [], self._acerca_de)
+        self.acc_actualizar = self._accion(
+            "Buscar actualizaciones", "SoftwareUpdateAvailable", [], lambda: self.buscar_actualizacion(avisar=True),
+            "Ver si hay una versión nueva de PDF Familiar",
+        )
         self.acc_proteger = self._accion(
             "Proteger con contraseña…", "SecurityHigh", [], self.proteger_con_contrasena,
             "Que el PDF pida una contraseña para abrirlo",
@@ -531,7 +538,7 @@ class VentanaPrincipal(QMainWindow):
 
         # Menú "Más" al principio, como en Acrobat: lo que se usa menos, para que la barra quepa
         menu = QMenu(self)
-        for a in (self.acc_imprimir, self.acc_proteger, self.acc_ancho, self.acc_completa, self.acc_cerrar, self.acc_pantalla, self.acc_acerca):
+        for a in (self.acc_imprimir, self.acc_proteger, self.acc_ancho, self.acc_completa, self.acc_cerrar, self.acc_pantalla, self.acc_actualizar, self.acc_acerca):
             menu.addAction(a)
         self.menu_paginas = self._crear_menu_paginas()
         self.boton_paginas.setMenu(self.menu_paginas)
@@ -1544,6 +1551,98 @@ class VentanaPrincipal(QMainWindow):
             f"<b>PDF Familiar {__version__}</b><br>Lector y editor de PDF para uso familiar.<br><br>"
             "Hecho con PySide6 (Qt) y PyMuPDF.",
         )
+
+    # --- Actualizaciones -------------------------------------------------
+    def buscar_actualizacion(self, avisar: bool = False):
+        """Mira si hay versión nueva. Con `avisar`, también dice si ya está al día o si falla."""
+        import threading
+
+        resultado = {}
+
+        def trabajo():
+            try:
+                resultado["nueva"] = actualizar.buscar_nueva(__version__)
+            except Exception as e:
+                resultado["error"] = e
+
+        hilo = threading.Thread(target=trabajo, daemon=True)
+        hilo.start()
+        reloj = QTimer(self, interval=200)
+
+        def mirar():
+            if hilo.is_alive():
+                return
+            reloj.stop()
+            reloj.deleteLater()
+            if "error" in resultado:
+                if avisar:
+                    QMessageBox.warning(
+                        self, "Buscar actualizaciones",
+                        "No se ha podido comprobar si hay una versión nueva. Mira que haya internet y prueba otra vez.",
+                    )
+            elif resultado.get("nueva"):
+                self._ofrecer_actualizacion(resultado["nueva"])
+            elif avisar:
+                QMessageBox.information(self, "Buscar actualizaciones", f"Ya tienes la última versión ({__version__}).")
+
+        reloj.timeout.connect(mirar)
+        reloj.start()
+
+    def _ofrecer_actualizacion(self, nueva: dict):
+        if getattr(self, "_actualizando", False):
+            return
+        caja = QMessageBox(self)
+        caja.setIcon(QMessageBox.Icon.Information)
+        caja.setWindowTitle("Hay una versión nueva")
+        caja.setText(f"<b>Ya está disponible PDF Familiar {nueva['version']}</b> (tienes la {__version__}).")
+        caja.setInformativeText("Se descarga e instala sola, y PDF Familiar se vuelve a abrir al terminar.")
+        si = caja.addButton("Actualizar ahora", QMessageBox.ButtonRole.AcceptRole)
+        caja.addButton("Más tarde", QMessageBox.ButtonRole.RejectRole)
+        caja.exec()
+        if caja.clickedButton() is not si:
+            return
+        if not actualizar.instalada():
+            QMessageBox.information(self, "Actualizar", "Solo se puede actualizar la versión instalada de PDF Familiar.")
+            return
+        self._actualizando = True
+        try:
+            instalador = self._descargar_actualizacion(nueva)
+        except Exception as e:
+            QMessageBox.warning(self, "Actualizar", f"No se ha podido descargar la versión nueva.\n\n{e}")
+            instalador = None
+        if instalador is None:
+            self._actualizando = False
+            return
+        # Primero se cierran los PDF (pregunta si hay cambios sin guardar)
+        if not self.cerrar_todos():
+            self._actualizando = False
+            self.statusBar().showMessage("Actualización cancelada: no se han cerrado los PDF", 6000)
+            return
+        actualizar.instalar(instalador)
+        self.close()
+
+    def _descargar_actualizacion(self, nueva: dict):
+        from PySide6.QtWidgets import QProgressDialog
+
+        dialogo = QProgressDialog(f"Descargando PDF Familiar {nueva['version']}…", "Cancelar", 0, 100, self)
+        dialogo.setWindowTitle("Actualizar")
+        dialogo.setWindowModality(Qt.WindowModality.WindowModal)
+        dialogo.setMinimumDuration(0)
+        estado = {"hecho": 0, "total": 0}
+
+        def avance(hecho, total):
+            estado.update(hecho=hecho, total=total)
+
+        reloj = QTimer(self, interval=150)
+        reloj.timeout.connect(
+            lambda: estado["total"] and dialogo.setValue(int(100 * estado["hecho"] / estado["total"]))
+        )
+        reloj.start()
+        try:
+            return en_segundo_plano(actualizar.descargar, nueva, avance, dialogo.wasCanceled)
+        finally:
+            reloj.stop()
+            dialogo.close()
 
     def dragEnterEvent(self, e):
         if any(u.toLocalFile().lower().endswith(ABRIBLES) for u in e.mimeData().urls()):

@@ -17,15 +17,16 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | Extra | Exportar a Word (.docx) para Google Docs e importar .docx como PDF | Hecho |
 | Extra | Cuenta de Google: enviar a Google Docs u Hojas de cálculo y traer de vuelta como PDF | Hecho |
 | Extra | Varios PDF abiertos a la vez, cada uno en su pestaña (como en Adobe) | Hecho |
+| Extra | Actualizarse sola: al abrirla mira si hay versión nueva y ofrece «Actualizar ahora» (también en Más → Buscar actualizaciones) | Hecho |
 | Extra | Proteger un PDF con contraseña (cifrado AES de 256 bits), cambiarla o quitarla: en Más → Proteger con contraseña | Hecho |
 | Extra | Logotipo (PF en un corazón) y color de fondo a elegir en la pantalla de inicio: gris, rosa, rojo, naranja o celeste suaves | Hecho |
 | 7. Instalador | Un único `.exe` con todo incluido | Hecho |
 
 ## Instalar en Windows
 
-1. Entra en la pestaña **Actions** del repositorio, abre la última ejecución verde de **Instalador** y descarga el archivo **PDFCasero-Instalador** de la parte de abajo (es un .zip; dentro está el instalador). Cuando haya versiones publicadas, también estará en **Releases**.
+1. Descarga `PDFCasero-Instalador-x.y.z.exe` de la [última versión publicada](https://github.com/VodafoneElche/pdf_editor_casero/releases/latest).
 2. Haz doble clic en `PDFCasero-Instalador-x.y.z.exe` y sigue los pasos. No pide contraseña de administrador: se instala para tu usuario (si quieres, puedes elegir instalarlo para todos).
-3. Como el instalador no está firmado, Windows puede mostrar "Windows protegió su PC". Pulsa **Más información → Ejecutar de todas formas**.
+3. Como el instalador no está firmado, Windows puede mostrar "Windows protegió su PC". Pulsa **Más información → Ejecutar de todas formas**. Solo hace falta la primera vez: las versiones nuevas las descarga e instala la propia app, sin ese aviso.
 
 Lleva todo dentro, también los idiomas del OCR, así que funciona sin Internet. Durante la instalación puedes elegir crear un icono en el escritorio y usar PDF Familiar para abrir los PDF; en cualquier caso aparece en **Abrir con** y en **Configuración → Aplicaciones → Aplicaciones predeterminadas**. Se desinstala desde **Configuración → Aplicaciones**, como cualquier otro programa.
 

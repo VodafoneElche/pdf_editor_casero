@@ -94,7 +94,10 @@ def test_hoja_como_ilovepdf_casillas_fondo_imagen_y_codigo_de_barras(tmp_path):
     assert total.row == casillas["Total a Pagar"].row and total.alignment.horizontal == "right"
     assert total.fill.fgColor.rgb.endswith("B2B2B2") and casillas["Total a Pagar"].fill.fgColor.rgb.endswith("B2B2B2")
     assert "FIN" in casillas
-    assert len(hoja._images) == 1
+    import zipfile
+
+    medios = [n for n in zipfile.ZipFile(destino).namelist() if n.startswith("xl/media/")]
+    assert medios == ["xl/media/image1.png"]  # la imagen, encima de las casillas
 
 
 def test_preparar_para_word_texto_girado_como_imagen_y_fuentes(tmp_path):

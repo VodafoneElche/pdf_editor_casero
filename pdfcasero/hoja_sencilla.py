@@ -260,7 +260,7 @@ def pdf_a_hoja(datos_pdf: bytes, destino: str, cancelado=lambda: False, avance=l
         # Imágenes encima de las casillas, en su sitio
         for r in zonas:
             foto = pagina.get_pixmap(clip=r, dpi=150)
-            imagen = ImagenExcel(io.BytesIO(foto.tobytes("png")))
+            imagen = _ImagenPng(ImagenExcel, foto.tobytes("png"))
             ancho_px, alto_px = r.width * _PUNTOS_A_PIXELES, r.height * _PUNTOS_A_PIXELES
             imagen.width, imagen.height = ancho_px, alto_px
             col = _indice(columnas, r.x0)
@@ -280,3 +280,16 @@ def pdf_a_hoja(datos_pdf: bytes, destino: str, cancelado=lambda: False, avance=l
 
 def _rgb_int(color: int):
     return ((color >> 16) & 255) / 255, ((color >> 8) & 255) / 255, (color & 255) / 255
+
+
+def _ImagenPng(base, datos: bytes):
+    """Una imagen PNG para openpyxl sin pasar por Pillow (el instalador no lo lleva)."""
+
+    class ImagenPng(base):
+        def __init__(self):
+            self.ref, self.format = io.BytesIO(datos), "png"
+
+        def _data(self):
+            return datos
+
+    return ImagenPng()

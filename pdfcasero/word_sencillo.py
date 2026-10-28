@@ -151,9 +151,18 @@ def _piezas(pagina):
         piezas.append(Pieza("imagen", caja))
     # Renglones: trozos de texto horizontales a la misma altura
     trozos = []
+    # El texto invisible (la capa del OCR encima de una foto o captura) no se copia: la
+    # imagen ya se ve tal cual y repetirla como texto la desordena
+    invisibles = [pymupdf.Rect(t["bbox"]) for t in pagina.get_texttrace() if t.get("type") == 3]
+
+    def visible(s):
+        r = pymupdf.Rect(s["bbox"])
+        centro = pymupdf.Point((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2)
+        return not any(centro in z for z in invisibles)
+
     for bloque in pagina.get_text("dict")["blocks"]:
         for linea in bloque.get("lines", []):
-            spans = [s for s in linea["spans"] if s["text"].strip()]
+            spans = [s for s in linea["spans"] if s["text"].strip() and visible(s)]
             if not spans or abs(linea["dir"][0] - 1) > 0.01:
                 continue
             r = pymupdf.Rect(linea["bbox"])

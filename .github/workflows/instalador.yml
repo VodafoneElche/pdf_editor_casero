@@ -73,7 +73,9 @@ jobs:
           Get-Content instalado.txt
           if ($p.ExitCode -ne 0) { exit 1 }
           # Igual que «Actualizar» desde la app: instalar encima en silencio y que se vuelva a abrir sola
-          Start-Process $instalador -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/reabrir=si' -Wait
+          # Sin -Wait: esperaría también a la app que se vuelve a abrir, que no se cierra sola
+          $act = Start-Process $instalador -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/reabrir=si' -PassThru
+          if (-not $act.WaitForExit(300000)) { Write-Error "La actualización no ha terminado"; exit 1 }
           for ($i = 0; $i -lt 30 -and -not (Get-Process PDFCasero -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Seconds 1 }
           if (-not (Get-Process PDFCasero -ErrorAction SilentlyContinue)) { Write-Error "Tras actualizar no se ha vuelto a abrir"; exit 1 }
           Get-Process PDFCasero | Stop-Process -Force

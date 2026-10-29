@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
@@ -40,6 +40,102 @@ def preparar_aspecto(app: QApplication) -> None:
     estilo.aplicar(app, ajustes.value("tema", "gris"), ajustes.value("barra", None))
 
 
+def _nombre_servidor() -> str:
+    import getpass
+
+    try:
+        usuario = getpass.getuser()
+    except Exception:
+        usuario = "usuario"
+    return f"PDFFamiliar-{usuario}"
+
+
+def enviar_a_la_abierta(rutas: list[str], nombre: str | None = None) -> bool:
+    """Si PDF Familiar ya está abierto, le pasa los PDF para que los abra en sus pestañas.
+
+    Devuelve True si había uno abierto (y entonces este se cierra sin abrir otra ventana).
+    """
+    import json
+
+    from PySide6.QtNetwork import QLocalSocket
+
+    conexion = QLocalSocket()
+    conexion.connectToServer(nombre or _nombre_servidor())
+    if not conexion.waitForConnected(500):
+        return False
+    if sys.platform == "win32":
+        try:  # deja que la ventana abierta se ponga delante
+            import ctypes
+
+            ctypes.windll.user32.AllowSetForegroundWindow(-1)
+        except Exception:
+            pass
+    conexion.write(json.dumps(rutas).encode("utf-8") + b"\n")
+    conexion.flush()
+    conexion.waitForBytesWritten(2000)
+    # Esperar a que la abierta diga que lo tiene (en Windows, si se corta antes, se pierde)
+    conexion.waitForReadyRead(3000)
+    conexion.disconnectFromServer()
+    return True
+
+
+def abrir_en_la_activa(rutas: list[str]) -> None:
+    from .ventana import ventana_activa
+
+    ventana = ventana_activa()
+    if ventana is None:
+        return
+    ventana.traer_al_frente()
+    for ruta in rutas:
+        ventana.abrir(ruta)
+
+
+def hay_una_abierta(nombre: str | None = None) -> bool:
+    from PySide6.QtNetwork import QLocalSocket
+
+    conexion = QLocalSocket()
+    conexion.connectToServer(nombre or _nombre_servidor())
+    abierta = conexion.waitForConnected(500)
+    conexion.abort()
+    return abierta
+
+
+def escuchar(app: QApplication, nombre: str | None = None):
+    """Recibe los PDF que se abren con la app ya abierta y los pone en la última ventana usada."""
+    import json
+
+    from PySide6.QtNetwork import QLocalServer
+
+    nombre = nombre or _nombre_servidor()
+    servidor = QLocalServer(app)
+    QLocalServer.removeServer(nombre)  # por si quedó uno de una vez que se cerró mal
+    servidor.listen(nombre)
+
+    def nueva_conexion():
+        conexion = servidor.nextPendingConnection()
+        datos = bytearray()
+
+        def leer():
+            datos.extend(bytes(conexion.readAll()))
+            if b"\n" not in datos:
+                return  # aún no ha llegado entero
+            linea = bytes(datos).split(b"\n", 1)[0]
+            datos.clear()
+            conexion.write(b"ok\n")  # el otro ya puede cerrarse
+            conexion.flush()
+            try:
+                rutas = json.loads(linea.decode("utf-8") or "[]")
+            except ValueError:
+                return
+            QTimer.singleShot(0, lambda: abrir_en_la_activa(rutas))
+
+        conexion.readyRead.connect(leer)
+        conexion.disconnected.connect(conexion.deleteLater)
+
+    servidor.newConnection.connect(nueva_conexion)
+    return servidor
+
+
 def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--autoprueba":
         from .autoprueba import ejecutar
@@ -50,13 +146,17 @@ def main() -> int:
     app.setOrganizationName("PDFCasero")
     traducir(app)
     preparar_aspecto(app)
+    # "Abrir con" desde el Explorador de Windows pasa la ruta como argumento
+    rutas = [str(Path(a).resolve()) for a in sys.argv[1:] if a.lower().endswith((".pdf", ".docx"))]
+    # Si ya hay un PDF Familiar abierto, los PDF van a sus pestañas y no se abre otra ventana
+    if enviar_a_la_abierta(rutas):
+        return 0
+    app._servidor = escuchar(app)
     app.setWindowIcon(QIcon(str(ICONO)))
     ventana = VentanaPrincipal()
     ventana.show()
-    # "Abrir con" desde el Explorador de Windows pasa la ruta como argumento
-    for arg in sys.argv[1:]:
-        if arg.lower().endswith((".pdf", ".docx")):
-            ventana.abrir(arg)  # cada uno en su pestaña
+    for ruta in rutas:
+        ventana.abrir(ruta)  # cada uno en su pestaña
     return app.exec()
 
 

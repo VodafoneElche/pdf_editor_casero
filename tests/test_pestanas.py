@@ -80,7 +80,7 @@ def test_inicio_colores_y_recientes(ventana, tmp_path, monkeypatch):
     monkeypatch.setattr(type(ventana.ajustes), "value", lambda self, k, d=None, **_: guardado.get(k, d))
     hoja = lambda: QApplication.instance().styleSheet()  # noqa: E731
     # Los botones de color cambian el fondo de toda la app y se recuerdan; la barra lo sigue
-    assert set(ventana.bienvenida.muestras) == {"gris", "rosa", "rojo", "naranja", "celeste"}
+    assert set(ventana.bienvenida.muestras) == {"gris", "rosa", "rojo", "naranja", "celeste", "oscuro"}
     ventana.bienvenida.muestras["celeste"].click()
     assert guardado["tema"] == "celeste" and "#e6f2fb" in hoja() and "#bcdcf3" in hoja()
     assert ventana.bienvenida.muestras_barra["celeste"].isChecked()
@@ -151,3 +151,68 @@ def test_botones_de_qt_en_espanol(ventana):
                        QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
     textos = {caja.button(b).text().replace("&", "") for b in (QMessageBox.StandardButton.Save, QMessageBox.StandardButton.Discard, QMessageBox.StandardButton.Cancel)}
     assert textos == {"Guardar", "Descartar", "Cancelar"}, textos
+
+
+def test_modo_oscuro_con_letras_claras(ventana, monkeypatch):
+    from PySide6.QtGui import QPalette
+    from PySide6.QtWidgets import QApplication
+
+    from pdfcasero import estilo
+
+    guardado = {}
+    monkeypatch.setattr(type(ventana.ajustes), "setValue", lambda self, k, v: guardado.__setitem__(k, v))
+    monkeypatch.setattr(type(ventana.ajustes), "value", lambda self, k, d=None, **_: guardado.get(k, d))
+    app = QApplication.instance()
+    ventana.bienvenida.muestras["oscuro"].click()
+    hoja = app.styleSheet()
+    assert "#1f1f23" in hoja and "QWidget { color: #ececf0; }" in hoja  # fondo oscuro, letras claras
+    assert app.palette().color(QPalette.ColorRole.Window).lightness() < 80
+    assert app.palette().color(QPalette.ColorRole.WindowText).lightness() > 200
+    assert ventana.bienvenida.muestras_barra["oscuro"].isChecked()
+    # Barra clara con fondo oscuro: las letras de la barra se oscurecen para leerse
+    ventana.bienvenida.muestras_barra["rosa"].click()
+    assert "QToolBar QToolButton { color: #2b2b2e; }" in app.styleSheet()
+    # Volver al gris lo deja todo claro
+    ventana.bienvenida.muestras["gris"].click()
+    ventana.bienvenida.muestras_barra["gris"].click()
+    assert app.palette().color(QPalette.ColorRole.Window).lightness() > 200
+    assert app.styleSheet() == estilo.hoja_estilo("gris", "gris")
+
+
+def test_teclas_zoom_y_nuevo(ventana, tmp_path, monkeypatch):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QKeySequence
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    ventana.abrir(pdf(tmp_path, "teclas", 4))
+    app = QApplication.instance()
+    app.processEvents()
+    assert round(ventana.visor.zoom, 2) == 1.06 and not ventana.visor.ajustar_ancho
+    assert ventana.etiqueta_zoom.text() == "106 %"
+    # Flechas y espacio pasan de página
+    for tecla in ("Right", "Space", "Left", "Shift+Space"):
+        assert QKeySequence(tecla) in (ventana.acc_siguiente.shortcuts() + ventana.acc_anterior.shortcuts())
+    ventana.visor.setFocus()
+    QTest.keyClick(ventana.visor, Qt.Key.Key_Right)
+    QTest.keyClick(ventana.visor, Qt.Key.Key_Space)
+    app.processEvents()
+    assert ventana.visor.pagina_actual == 2
+    QTest.keyClick(ventana.visor, Qt.Key.Key_Left)
+    app.processEvents()
+    assert ventana.visor.pagina_actual == 1
+    # En el buscador, el espacio escribe
+    ventana.campo_buscar.setFocus()
+    QTest.keyClicks(ventana.campo_buscar, "a b")
+    QTest.keyClick(ventana.campo_buscar, Qt.Key.Key_Left)
+    app.processEvents()
+    assert ventana.campo_buscar.text() == "a b" and ventana.visor.pagina_actual == 1
+    # Nuevo: PDF en blanco A4, sin guardar, en su pestaña
+    monkeypatch.setattr(type(ventana.ajustes), "value", lambda self, k, d=None, **_: str(tmp_path) if k == "ultima_carpeta" else d)
+    ventana.nuevo_documento()
+    assert ventana.doc.num_paginas == 1 and ventana.doc.nuevo and ventana.doc.modificado
+    assert ventana.doc.tamano_pagina(0) == (595, 842)
+    assert ventana.doc.ruta == tmp_path / "Documento nuevo.pdf"
+    assert len(ventana.abiertos) == 2
+    ventana.nuevo_documento()
+    assert ventana.doc.ruta.name == "Documento nuevo 2.pdf"

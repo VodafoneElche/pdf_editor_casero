@@ -11,7 +11,71 @@ TEMAS = {
     "rojo": ("Rojo suave", "#fbe7e6", "#f1cfcd", "#f7dcda", "#e88f8b", "#f1bebb"),
     "naranja": ("Naranja suave", "#fdeedf", "#f5d9bd", "#fae4cd", "#f4b47a", "#f7cfa8"),
     "celeste": ("Azul celeste suave", "#e6f2fb", "#cbe2f3", "#d9eaf7", "#8ec8ef", "#bcdcf3"),
+    "oscuro": ("Oscuro (letras claras)", "#1f1f23", "#2b2b30", "#26262b", "#3a3a40", "#151518"),
 }
+
+# Modo oscuro: cada color claro de la hoja de estilo pasa a su pareja oscura
+# (los fondos se oscurecen y las letras se aclaran para que se lean bien)
+OSCUROS = {
+    "#ffffff": "#2d2d33",  # cuadros de texto, barra, lista de recientes, pestaña elegida
+    "#1d1d1f": "#ececf0",  # texto
+    "#2b2b2e": "#e6e6ea",  # texto de los botones
+    "#55555c": "#b4b4bc",  # texto secundario
+    "#44444a": "#c8c8d0",  # pestañas
+    "#a9a9b0": "#6c6c74",  # botones desactivados
+    "#dddde1": "#3c3c43",  # bordes
+    "#cfcfd6": "#4a4a52",  # bordes de los cuadros de texto
+    "#ececf0": "#3a3a42",  # botón al pasar el ratón
+    "#e0e0e6": "#44444c",  # botón pulsado
+    "#fafafb": "#26262b",  # barra de dibujo
+    "#e6e6ea": "#34343a",  # pestañas sin elegir
+    "#ededf1": "#3a3a40",
+    "#f3f3f6": "#36363c",
+    "#f6d9d7": "#5a2a28",  # elegido (rojo apagado)
+}
+
+
+def es_oscuro(tema: str | None) -> bool:
+    return tema == "oscuro"
+
+
+def paleta(tema: str):
+    """Colores de Qt para menús, avisos y cuadros de diálogo, a juego con el tema."""
+    from PySide6.QtGui import QColor, QPalette
+    from PySide6.QtWidgets import QApplication
+
+    if not es_oscuro(tema):
+        return QApplication.style().standardPalette()
+    P = QPalette
+    pal = QPalette()
+    colores = {
+        P.ColorRole.Window: "#2b2b30", P.ColorRole.WindowText: "#ececf0",
+        P.ColorRole.Base: "#1f1f23", P.ColorRole.AlternateBase: "#26262b",
+        P.ColorRole.Text: "#ececf0", P.ColorRole.Button: "#34343a",
+        P.ColorRole.ButtonText: "#ececf0", P.ColorRole.BrightText: "#ffffff",
+        P.ColorRole.ToolTipBase: "#34343a", P.ColorRole.ToolTipText: "#ececf0",
+        P.ColorRole.Highlight: ACENTO, P.ColorRole.HighlightedText: "#ffffff",
+        P.ColorRole.PlaceholderText: "#8a8a92", P.ColorRole.Link: "#ff8a80",
+        P.ColorRole.Light: "#45454c", P.ColorRole.Midlight: "#3a3a40",
+        P.ColorRole.Mid: "#2a2a2f", P.ColorRole.Dark: "#18181b", P.ColorRole.Shadow: "#000000",
+    }
+    for rol, color in colores.items():
+        pal.setColor(rol, QColor(color))
+    for rol in (P.ColorRole.WindowText, P.ColorRole.Text, P.ColorRole.ButtonText):
+        pal.setColor(P.ColorGroup.Disabled, rol, QColor("#6c6c74"))
+    return pal
+
+
+def aplicar(app, tema: str = "gris", barra: str | None = None) -> None:
+    """Pone en la aplicación los colores elegidos: paleta de Qt y hoja de estilo."""
+    from PySide6.QtCore import Qt
+
+    try:
+        app.styleHints().setColorScheme(Qt.ColorScheme.Dark if es_oscuro(tema) else Qt.ColorScheme.Light)
+    except AttributeError:  # Qt anterior a 6.8
+        pass
+    app.setPalette(paleta(tema))
+    app.setStyleSheet(hoja_estilo(tema, barra))
 
 
 def hoja_estilo(tema: str = "gris", barra: str | None = None) -> str:
@@ -20,12 +84,34 @@ def hoja_estilo(tema: str = "gris", barra: str | None = None) -> str:
     _, fondo, visor, panel, _, _ = TEMAS.get(tema, TEMAS["gris"])
     barra = barra if barra in TEMAS else tema if tema in TEMAS else "gris"
     color_barra = TEMAS[barra][5]
-    hoja = HOJA_ESTILO.replace("#f5f5f7", fondo).replace("#e4e4e8", visor).replace("#f0f0f3", panel)
-    if barra != "gris":
+    hoja = HOJA_ESTILO
+    if es_oscuro(tema):
+        import re
+
+        # De una sola pasada: si no, un color ya cambiado se volvería a cambiar
+        patron = re.compile("|".join(re.escape(c) for c in OSCUROS))
+        hoja = patron.sub(lambda m: OSCUROS[m.group(0)], hoja)
+        # El cuadro para escribir sobre la página sigue blanco, como la página
+        hoja += (
+            "QLineEdit#editorEnLinea { background: #ffffff; color: #111111; }\n"
+            # Avisos encima de la página, en tonos oscuros con letra clara
+            "QFrame#avisoEscaneado { background: #3a3320; border-bottom: 1px solid #5a4a1a; }\n"
+            "QFrame#avisoEscaneado QLabel { color: #f0d68a; }\n"
+            'QFrame#avisoEscaneado[editable="true"] { background: #1f3326; border-bottom: 1px solid #2f5a3a; }\n'
+            'QFrame#avisoEscaneado[editable="true"] QLabel { color: #b5e3c0; }\n'
+        )
+    hoja = hoja.replace("#f5f5f7", fondo).replace("#e4e4e8", visor).replace("#f0f0f3", panel)
+    if barra != "gris" or es_oscuro(tema):
+        oscura = es_oscuro(barra)
+        # Letras de la barra que se lean sobre su color
+        letras = "#e6e6ea" if oscura else "#2b2b2e"
+        sombra = "255, 255, 255" if oscura else "0, 0, 0"
         hoja += (
             f"QToolBar#barraPrincipal, QToolBar#barraDibujo, QToolBar#barraFormulario {{ background: {color_barra}; }}\n"
-            "QToolBar QToolButton:hover { background: rgba(0, 0, 0, 0.07); }\n"
-            "QToolBar QToolButton:pressed { background: rgba(0, 0, 0, 0.12); }\n"
+            f"QToolBar QToolButton {{ color: {letras}; }}\n"
+            f"QToolBar QLabel {{ color: {letras}; }}\n"
+            f"QToolBar QToolButton:hover {{ background: rgba({sombra}, 0.09); }}\n"
+            f"QToolBar QToolButton:pressed {{ background: rgba({sombra}, 0.15); }}\n"
         )
     return hoja
 

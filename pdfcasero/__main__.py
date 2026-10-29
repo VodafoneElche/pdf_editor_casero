@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication
 
 from PySide6.QtCore import QSettings
 
-from .estilo import hoja_estilo
+from . import estilo
 from .ventana import VentanaPrincipal
 
 
@@ -29,19 +29,15 @@ def traducir(app: QApplication) -> None:
 
 
 def preparar_aspecto(app: QApplication) -> None:
-    """Siempre en claro, también si Windows está en modo oscuro.
+    """Los colores elegidos en la app, sin hacer caso del modo oscuro de Windows.
 
-    Con el modo oscuro, Windows pintaba el texto en blanco y los cuadros
-    (página, buscar, zoom) se quedaban en blanco sobre blanco.
+    Con el modo oscuro de Windows, el texto salía en blanco y los cuadros
+    (página, buscar, zoom) se quedaban en blanco sobre blanco. El modo oscuro
+    se elige dentro de la app («Oscuro» en los colores de la pantalla de inicio).
     """
-    try:
-        app.styleHints().setColorScheme(Qt.ColorScheme.Light)
-    except AttributeError:  # Qt anterior a 6.8
-        pass
     app.setStyle("Fusion")
-    app.setPalette(app.style().standardPalette())
     ajustes = QSettings("PDFCasero", "PDFCasero")
-    app.setStyleSheet(hoja_estilo(ajustes.value("tema", "gris"), ajustes.value("barra", None)))
+    estilo.aplicar(app, ajustes.value("tema", "gris"), ajustes.value("barra", None))
 
 
 def main() -> int:

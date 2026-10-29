@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QEventLoop, QPoint, QRect, QSettings, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QImage, QIntValidator, QKeySequence, QPainter, QPen, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QPalette, QIcon, QImage, QIntValidator, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -65,7 +65,8 @@ class DelegadoMiniatura(QStyledItemDelegate):
         seleccionada = bool(opcion.state & QStyle.StateFlag.State_Selected)
         if seleccionada:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor("#f6d9d7"))
+            oscuro = QApplication.palette().color(QPalette.ColorRole.Window).lightness() < 128
+            p.setBrush(QColor("#5a2a28" if oscuro else "#f6d9d7"))
             p.drawRoundedRect(r.adjusted(4, 2, -4, -2), 6, 6)
         icono_pag: QIcon = indice.data(Qt.ItemDataRole.DecorationRole)
         caja = QRect(r.x() + (r.width() - ANCHO_MINIATURA) // 2, r.y() + 6, ANCHO_MINIATURA, self.ALTO)
@@ -79,7 +80,7 @@ class DelegadoMiniatura(QStyledItemDelegate):
         p.setPen(QColor("#c4302b") if seleccionada else QColor("#c9c9d0"))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(caja.adjusted(0, 0, -1, -1))
-        p.setPen(QColor("#c4302b") if seleccionada else QColor("#55555c"))
+        p.setPen(QColor("#c4302b") if seleccionada else QApplication.palette().color(QPalette.ColorRole.PlaceholderText))
         p.drawText(QRect(r.x(), caja.bottom() + 4, r.width(), 20), Qt.AlignmentFlag.AlignHCenter, indice.data())
 
 
@@ -243,6 +244,10 @@ class Bienvenida(QWidget):
         boton.setText("Abrir PDF…")
         boton.setObjectName("botonPrincipal")
         boton.clicked.connect(ventana.abrir_dialogo)
+        boton_nuevo = QToolButton()
+        boton_nuevo.setText("Nuevo PDF en blanco")
+        boton_nuevo.setToolTip("Una hoja en blanco para escribir con Editar texto o dibujar")
+        boton_nuevo.clicked.connect(ventana.nuevo_documento)
         boton_google = QToolButton()
         boton_google.setText("Traer de Google…")
         boton_google.clicked.connect(lambda: ventana.google.traer())
@@ -254,7 +259,7 @@ class Bienvenida(QWidget):
         self.lista.itemActivated.connect(lambda it: ventana.abrir(it.data(Qt.ItemDataRole.UserRole)))
         self.etiqueta_recientes = QLabel("Abiertos recientemente")
         self.etiqueta_recientes.setObjectName("textoBienvenida")
-        for w in (logo, titulo, version, texto, boton, boton_google, self.etiqueta_recientes, self.lista):
+        for w in (logo, titulo, version, texto, boton, boton_nuevo, boton_google, self.etiqueta_recientes, self.lista):
             lay.addWidget(w, 0, Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(self._muestras_de_color(ventana), 0, Qt.AlignmentFlag.AlignHCenter)
 
@@ -314,6 +319,7 @@ class Bienvenida(QWidget):
 
 
 ABRIBLES = (".pdf",) + conversion.EXTENSIONES_WORD
+ZOOM_INICIAL = 1.06  # zoom al abrir un documento
 
 
 def en_segundo_plano(funcion, *args):
@@ -449,6 +455,7 @@ class VentanaPrincipal(QMainWindow):
 
     def _crear_acciones(self):
         S = QKeySequence.StandardKey
+        self.acc_nuevo = self._accion("Nuevo", "DocumentNew", S.New, self.nuevo_documento, "PDF en blanco para escribir o dibujar (Ctrl+N)")
         self.acc_abrir = self._accion("Abrir", "DocumentOpen", S.Open, self.abrir_dialogo, "Abrir un PDF (Ctrl+O)")
         self.acc_guardar = self._accion("Guardar", "DocumentSave", S.Save, self.guardar, "Guardar (Ctrl+S)")
         self.acc_guardar_como = self._accion(
@@ -521,7 +528,8 @@ class VentanaPrincipal(QMainWindow):
             "Proteger con contraseña…", "SecurityHigh", [], self.proteger_con_contrasena,
             "Que el PDF pida una contraseña para abrirlo",
         )
-        for a, teclas in ((self.acc_siguiente, ["Ctrl+Right"]), (self.acc_anterior, ["Ctrl+Left"])):
+        # Flechas y barra espaciadora pasan de página (en los cuadros de texto siguen escribiendo)
+        for a, teclas in ((self.acc_siguiente, ["Right", "Space", "Ctrl+Right"]), (self.acc_anterior, ["Left", "Shift+Space", "Ctrl+Left"])):
             a.setShortcuts([QKeySequence(t) for t in teclas])
         self._acciones_doc = [
             self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_formulario, self.acc_word, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar, self.acc_girar_izq, self.acc_girar_der,
@@ -552,6 +560,7 @@ class VentanaPrincipal(QMainWindow):
         barra.addWidget(boton_mas)
         barra.addSeparator()
 
+        barra.addAction(self.acc_nuevo)
         barra.addAction(self.acc_abrir)
         barra.addAction(self.acc_guardar)
         barra.addAction(self.acc_guardar_como)
@@ -649,6 +658,35 @@ class VentanaPrincipal(QMainWindow):
         )
         for ruta in rutas:
             self.abrir(ruta)
+
+    def nuevo_documento(self):
+        """Un PDF en blanco (una hoja A4) para escribir con Editar texto o dibujar."""
+        import tempfile
+
+        import pymupdf
+
+        carpeta = Path(tempfile.mkdtemp(prefix="pdfcasero_"))
+        tmp = carpeta / "nuevo.pdf"
+        blanco = pymupdf.open()
+        blanco.new_page(width=595, height=842)  # A4 vertical
+        blanco.save(tmp)
+        blanco.close()
+        doc = Documento(tmp)
+        # Nombre que se propone al guardar: «Documento nuevo.pdf», «Documento nuevo 2.pdf»…
+        destino = Path(self.ajustes.value("ultima_carpeta", str(Path.home())))
+        usados = {d.ruta.name for d in self.abiertos}
+        n, nombre = 1, "Documento nuevo.pdf"
+        while nombre in usados or (destino / nombre).exists():
+            n += 1
+            nombre = f"Documento nuevo {n}.pdf"
+        doc.ruta = destino / nombre
+        doc.nuevo = True
+        doc.modificado = True
+        self._mostrar_documento(doc, str(doc.ruta), reciente=False)
+        self.statusBar().showMessage(
+            "PDF en blanco listo: pulsa «Editar texto» para escribir o «Dibujar» para hacer esquemas. "
+            "Más páginas en «Páginas».", 15000,
+        )
 
     def abrir(self, ruta: str) -> bool:
         ruta = str(Path(ruta))
@@ -825,6 +863,8 @@ class VentanaPrincipal(QMainWindow):
         self._texto_buscado = ""
         self.doc = doc
         pagina, zoom, ancho = getattr(doc, "vista", (0, None, None)) if doc else (0, None, None)
+        if doc is not None and zoom is None:
+            zoom, ancho = ZOOM_INICIAL, False  # cada PDF nuevo se abre al 106 %
         if zoom is not None:
             self.visor.ajustar_ancho = ancho
             self.visor.zoom = zoom
@@ -988,11 +1028,10 @@ class VentanaPrincipal(QMainWindow):
         self._aplicar_colores()
 
     def _aplicar_colores(self):
-        from .estilo import hoja_estilo
+        from . import estilo
 
-        QApplication.instance().setStyleSheet(
-            hoja_estilo(self.ajustes.value("tema", "gris"), self.ajustes.value("barra", None))
-        )
+        estilo.aplicar(QApplication.instance(), self.ajustes.value("tema", "gris"), self.ajustes.value("barra", None))
+        self.miniaturas.viewport().update()
 
     def recientes(self) -> list[str]:
         valor = self.ajustes.value("recientes", [])

@@ -79,6 +79,19 @@ def _google_funciona() -> str:
     return f"Google ok ({cliente})"
 
 
+def _una_sola_ventana(app) -> str:
+    """Un PDF abierto con la app ya abierta llega a sus pestañas (servidor local de Qt)."""
+    import time
+
+    from .__main__ import enviar_a_la_abierta, escuchar
+
+    nombre = f"PDFFamiliar-autoprueba-{time.time_ns()}"
+    escuchar(app, nombre)
+    if not enviar_a_la_abierta([], nombre):
+        raise RuntimeError("No funciona pasar los PDF a la ventana ya abierta (QtNetwork)")
+    return "Una sola ventana ok"
+
+
 def ejecutar(salida: str) -> int:
     lineas, codigo = [], 0
     try:
@@ -99,6 +112,7 @@ def ejecutar(salida: str) -> int:
         QTimer.singleShot(500, app.quit)
         app.exec()
         lineas.append("Ventana ok")
+        lineas.append(_una_sola_ventana(app))
         lineas.append(_ocr_funciona())
         lineas.append(_word_funciona())
         lineas.append(_google_funciona())

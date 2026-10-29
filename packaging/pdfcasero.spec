@@ -14,7 +14,7 @@ if not idiomas:
 
 # Partes de Qt que no usamos: así el instalador pesa bastante menos
 NO_USADOS = [
-    "tkinter", "PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets",
+    "tkinter", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets",
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtMultimedia",
     "PySide6.Qt3DCore", "PySide6.QtCharts", "PySide6.QtDataVisualization", "PySide6.QtPdf",
     "PySide6.QtSql", "PySide6.QtTest", "PySide6.QtOpenGL", "PySide6.QtOpenGLWidgets",
@@ -24,7 +24,7 @@ NO_USADOS = [
     "pandas", "onnxruntime", "PIL", "yaml", "matplotlib", "scipy", "pdf2docx.gui",
 ]
 # Bibliotecas y plugins de Qt que arrastra PySide6 sin hacer falta
-SOBRAN = ("qt6qml", "qt6quick", "virtualkeyboard", "qt6pdf", "qt6network", "qt6svg", "qt6opengl",
+SOBRAN = ("qt6qml", "qt6quick", "virtualkeyboard", "qt6pdf", "qt6svg", "qt6opengl",
           "opengl32sw", "qtvirtualkeyboard", "/qml/", "\\qml\\", "tls", "networkinformation")
 
 
@@ -43,7 +43,7 @@ a = Analysis(
         *idiomas,
         *collect_data_files("docx"),  # plantilla vacía de Word que usa python-docx
     ],
-    hiddenimports=["pdf2docx", "mammoth", "fitz", "openpyxl", "pdfcasero.word_sencillo"],
+    hiddenimports=["PySide6.QtNetwork", "pdf2docx", "mammoth", "fitz", "openpyxl", "pdfcasero.word_sencillo"],
     excludes=NO_USADOS,
     noarchive=False,
 )

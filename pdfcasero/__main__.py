@@ -40,6 +40,86 @@ def preparar_aspecto(app: QApplication) -> None:
     estilo.aplicar(app, ajustes.value("tema", "gris"), ajustes.value("barra", None))
 
 
+def _nombre_servidor() -> str:
+    import getpass
+
+    try:
+        usuario = getpass.getuser()
+    except Exception:
+        usuario = "usuario"
+    return f"PDFFamiliar-{usuario}"
+
+
+def enviar_a_la_abierta(rutas: list[str], nombre: str | None = None) -> bool:
+    """Si PDF Familiar ya está abierto, le pasa los PDF para que los abra en sus pestañas.
+
+    Devuelve True si había uno abierto (y entonces este se cierra sin abrir otra ventana).
+    """
+    import json
+
+    from PySide6.QtNetwork import QLocalSocket
+
+    conexion = QLocalSocket()
+    conexion.connectToServer(nombre or _nombre_servidor())
+    if not conexion.waitForConnected(500):
+        return False
+    if sys.platform == "win32":
+        try:  # deja que la ventana abierta se ponga delante
+            import ctypes
+
+            ctypes.windll.user32.AllowSetForegroundWindow(-1)
+        except Exception:
+            pass
+    conexion.write(json.dumps(rutas).encode("utf-8"))
+    conexion.flush()
+    conexion.waitForBytesWritten(2000)
+    conexion.disconnectFromServer()
+    if conexion.state() != QLocalSocket.LocalSocketState.UnconnectedState:
+        conexion.waitForDisconnected(1000)
+    return True
+
+
+def escuchar(app: QApplication, nombre: str | None = None):
+    """Recibe los PDF que se abren con la app ya abierta y los pone en la última ventana usada."""
+    import json
+
+    from PySide6.QtNetwork import QLocalServer
+
+    nombre = nombre or _nombre_servidor()
+    servidor = QLocalServer(app)
+    QLocalServer.removeServer(nombre)  # por si quedó uno de una vez que se cerró mal
+    servidor.listen(nombre)
+
+    def nueva_conexion():
+        conexion = servidor.nextPendingConnection()
+        datos = bytearray()
+
+        def leer():
+            datos.extend(bytes(conexion.readAll()))
+
+        def terminar():
+            leer()
+            conexion.deleteLater()
+            try:
+                rutas = json.loads(datos.decode("utf-8") or "[]")
+            except ValueError:
+                return
+            from .ventana import ventana_activa
+
+            ventana = ventana_activa()
+            if ventana is None:
+                return
+            ventana.traer_al_frente()
+            for ruta in rutas:
+                ventana.abrir(ruta)
+
+        conexion.readyRead.connect(leer)
+        conexion.disconnected.connect(terminar)
+
+    servidor.newConnection.connect(nueva_conexion)
+    return servidor
+
+
 def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--autoprueba":
         from .autoprueba import ejecutar
@@ -50,13 +130,17 @@ def main() -> int:
     app.setOrganizationName("PDFCasero")
     traducir(app)
     preparar_aspecto(app)
+    # "Abrir con" desde el Explorador de Windows pasa la ruta como argumento
+    rutas = [str(Path(a).resolve()) for a in sys.argv[1:] if a.lower().endswith((".pdf", ".docx"))]
+    # Si ya hay un PDF Familiar abierto, los PDF van a sus pestañas y no se abre otra ventana
+    if enviar_a_la_abierta(rutas):
+        return 0
+    app._servidor = escuchar(app)
     app.setWindowIcon(QIcon(str(ICONO)))
     ventana = VentanaPrincipal()
     ventana.show()
-    # "Abrir con" desde el Explorador de Windows pasa la ruta como argumento
-    for arg in sys.argv[1:]:
-        if arg.lower().endswith((".pdf", ".docx")):
-            ventana.abrir(arg)  # cada uno en su pestaña
+    for ruta in rutas:
+        ventana.abrir(ruta)  # cada uno en su pestaña
     return app.exec()
 
 

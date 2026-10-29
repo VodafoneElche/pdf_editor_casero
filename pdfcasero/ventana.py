@@ -347,9 +347,54 @@ def en_segundo_plano(funcion, *args):
     return resultado.get("valor")
 
 
-class VentanaPrincipal(QMainWindow):
+# Ventanas abiertas, la última usada al final: ahí van los PDF que se abren desde fuera
+VENTANAS: list["VentanaPrincipal"] = []
+
+
+def ventana_activa() -> "VentanaPrincipal | None":
+    return VENTANAS[-1] if VENTANAS else None
+
+
+class BarraPestanas(QTabBar):
+    """Pestañas que se pueden ordenar y, arrastrándolas fuera, sacar a otra ventana."""
+
+    sacar = Signal(int, QPoint)  # índice de la pestaña, posición del ratón en la pantalla
+    DISTANCIA = 40  # píxeles fuera de la barra para que cuente como «sacarla»
+
     def __init__(self):
         super().__init__()
+        self._arrastrando = -1
+
+    def mousePressEvent(self, e):
+        self._arrastrando = self.tabAt(e.position().toPoint()) if e.button() == Qt.MouseButton.LeftButton else -1
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e):
+        p = e.position().toPoint()
+        fuera = p.y() < -self.DISTANCIA or p.y() > self.height() + self.DISTANCIA
+        if self._arrastrando >= 0 and fuera and self.count() > 1:
+            indice, self._arrastrando = self._arrastrando, -1
+            # Terminar el arrastre de la pestaña antes de sacarla
+            from PySide6.QtGui import QMouseEvent
+
+            soltar = QMouseEvent(
+                QMouseEvent.Type.MouseButtonRelease, e.position(), e.globalPosition(),
+                Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, e.modifiers(),
+            )
+            super().mouseReleaseEvent(soltar)
+            self.sacar.emit(indice, e.globalPosition().toPoint())
+            return
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        self._arrastrando = -1
+        super().mouseReleaseEvent(e)
+
+
+class VentanaPrincipal(QMainWindow):
+    def __init__(self, buscar_actualizaciones: bool = True):
+        super().__init__()
+        VENTANAS.append(self)
         self.ajustes = QSettings("PDFCasero", "PDFCasero")
         self.doc: Documento | None = None  # el de la pestaña elegida
         self.abiertos: list[Documento] = []  # uno por pestaña, en el mismo orden
@@ -402,7 +447,7 @@ class VentanaPrincipal(QMainWindow):
         lay.addLayout(derecha, 1)
 
         # Pestañas arriba, una por PDF abierto (como en Adobe)
-        self.pestanas = QTabBar()
+        self.pestanas = BarraPestanas()
         self.pestanas.setObjectName("pestanas")
         self.pestanas.setTabsClosable(True)
         self.pestanas.setMovable(True)
@@ -412,6 +457,7 @@ class VentanaPrincipal(QMainWindow):
         self.pestanas.currentChanged.connect(self._pestana_elegida)
         self.pestanas.tabCloseRequested.connect(self.cerrar_pestana)
         self.pestanas.tabMoved.connect(self._pestana_movida)
+        self.pestanas.sacar.connect(self.sacar_pestana)
         con_pestanas = QWidget()
         columna = QVBoxLayout(con_pestanas)
         columna.setContentsMargins(0, 0, 0, 0)
@@ -440,7 +486,7 @@ class VentanaPrincipal(QMainWindow):
         if geom is not None:
             self.restoreGeometry(geom)
         # Al abrir, mira en silencio si hay versión nueva (solo en la versión instalada)
-        if actualizar.instalada():
+        if buscar_actualizaciones and actualizar.instalada():
             QTimer.singleShot(3000, self.buscar_actualizacion)
 
     # --- Interfaz ---------------------------------------------------------
@@ -894,6 +940,48 @@ class VentanaPrincipal(QMainWindow):
         for i, d in enumerate(self.abiertos):
             self.pestanas.setTabText(i, ("● " if d.modificado else "") + d.ruta.name)
             self.pestanas.setTabToolTip(i, str(d.ruta))
+
+    def sacar_pestana(self, i: int, donde: QPoint | None = None) -> "VentanaPrincipal | None":
+        """Lleva el PDF de esa pestaña a una ventana nueva (como en el navegador)."""
+        if not 0 <= i < len(self.abiertos) or len(self.abiertos) < 2:
+            return None
+        doc = self.abiertos[i]
+        if doc is self.doc:
+            doc.vista = (self.visor.pagina_actual, self.visor.zoom, self.visor.ajustar_ancho)
+        self.abiertos.pop(i)
+        self.pestanas.blockSignals(True)
+        self.pestanas.removeTab(i)
+        self.pestanas.blockSignals(False)
+        if doc is self.doc:
+            self.doc = None  # su vista ya está guardada
+            siguiente = self.abiertos[min(i, len(self.abiertos) - 1)]
+            self._activar(siguiente)
+            self.pestanas.setCurrentIndex(self.abiertos.index(siguiente))
+        nueva = VentanaPrincipal(buscar_actualizaciones=False)
+        nueva.resize(self.size())
+        if donde is not None:
+            nueva.move(donde - QPoint(120, 20))
+        else:
+            nueva.move(self.pos() + QPoint(40, 40))
+        nueva.show()
+        nueva._mostrar_documento(doc, str(doc.ruta), reciente=False)
+        nueva.raise_()
+        nueva.activateWindow()
+        return nueva
+
+    def traer_al_frente(self):
+        if self.isMinimized():
+            self.setWindowState((self.windowState() & ~Qt.WindowState.WindowMinimized) | Qt.WindowState.WindowActive)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def changeEvent(self, e):
+        # La última ventana usada pasa al final de la lista
+        if e.type() == e.Type.ActivationChange and self.isActiveWindow() and self in VENTANAS:
+            VENTANAS.remove(self)
+            VENTANAS.append(self)
+        super().changeEvent(e)
 
     def cerrar_pestana(self, i: int) -> bool:
         """Cierra el PDF de esa pestaña. False si el usuario cancela por cambios sin guardar."""
@@ -1697,4 +1785,6 @@ class VentanaPrincipal(QMainWindow):
             e.ignore()
             return
         self.ajustes.setValue("geometria", self.saveGeometry())
+        if self in VENTANAS:
+            VENTANAS.remove(self)
         super().closeEvent(e)

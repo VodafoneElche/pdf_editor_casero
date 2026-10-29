@@ -83,11 +83,11 @@ def _una_sola_ventana(app) -> str:
     """Un PDF abierto con la app ya abierta llega a sus pestañas (servidor local de Qt)."""
     import time
 
-    from .__main__ import enviar_a_la_abierta, escuchar
+    from .__main__ import escuchar, hay_una_abierta
 
     nombre = f"PDFFamiliar-autoprueba-{time.time_ns()}"
     escuchar(app, nombre)
-    if not enviar_a_la_abierta([], nombre):
+    if not hay_una_abierta(nombre):
         raise RuntimeError("No funciona pasar los PDF a la ventana ya abierta (QtNetwork)")
     return "Una sola ventana ok"
 

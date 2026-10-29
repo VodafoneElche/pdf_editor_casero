@@ -36,7 +36,10 @@ def esperar(app, condicion, segundos=5):
 
 
 def test_abrir_con_la_app_ya_abierta(app, tmp_path):
-    from pdfcasero.__main__ import enviar_a_la_abierta, escuchar
+    import subprocess
+    import sys
+
+    from pdfcasero.__main__ import enviar_a_la_abierta, escuchar, hay_una_abierta
     from pdfcasero.ventana import VentanaPrincipal
 
     nombre = f"PDFFamiliar-prueba-{time.time_ns()}"
@@ -45,8 +48,17 @@ def test_abrir_con_la_app_ya_abierta(app, tmp_path):
     v = VentanaPrincipal()
     v.show()
     try:
-        assert enviar_a_la_abierta([pdf(tmp_path, "uno"), pdf(tmp_path, "dos")], nombre)
-        assert esperar(app, lambda: len(v.abiertos) == 2)
+        assert hay_una_abierta(nombre)
+        # Como al hacer doble clic en un PDF: otro proceso le pasa las rutas a la abierta
+        rutas = [pdf(tmp_path, "uno"), pdf(tmp_path, "dos")]
+        codigo = (
+            "import sys; from PySide6.QtCore import QCoreApplication; a = QCoreApplication([]);"
+            "from pdfcasero.__main__ import enviar_a_la_abierta;"
+            f"print(enviar_a_la_abierta({rutas!r}, {nombre!r}))"
+        )
+        otro = subprocess.Popen([sys.executable, "-c", codigo], stdout=subprocess.PIPE, text=True)
+        assert esperar(app, lambda: len(v.abiertos) == 2 and otro.poll() is not None, 20)
+        assert otro.stdout.read().strip() == "True"
         assert [d.ruta.name for d in v.abiertos] == ["uno.pdf", "dos.pdf"]
     finally:
         v.close()

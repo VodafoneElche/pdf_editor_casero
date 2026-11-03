@@ -36,6 +36,7 @@ class Documento:
         self.modificado = False  # lo activan el OCR y la edición de texto
         self.nuevo = False  # True si viene de un Word convertido y aún no tiene PDF propio
         self._palabras: dict[int, list] = {}
+        self._letras: dict[int, list] = {}  # página -> [(x0, y0, x1, y1, letra)] de todo su texto
         self._deshacer: list[bytes] = []
         self._rehacer: list[bytes] = []
 
@@ -87,19 +88,61 @@ class Documento:
             self._palabras[n] = self._doc[n].get_text("words", sort=True)
         return self._palabras[n]
 
+    def _letras_pagina(self, n: int) -> list[tuple]:
+        if n not in self._letras:
+            letras = []
+            for bloque in self._doc[n].get_text("rawdict")["blocks"]:
+                for linea in bloque.get("lines", []):
+                    for tramo in linea["spans"]:
+                        for c in tramo["chars"]:
+                            if not c["c"].isspace():
+                                letras.append((*c["bbox"], c["c"]))
+            self._letras[n] = letras
+        return self._letras[n]
+
+    def bordes_letras(self, n: int, k: int) -> list[tuple[float, float]]:
+        """Dónde empieza y acaba (en x) cada letra de la palabra k, para seleccionar solo un trozo."""
+        x0, y0, x1, y1, texto = self.palabras(n)[k][:5]
+        centro_y = (y0 + y1) / 2
+        dentro = sorted(
+            (l for l in self._letras_pagina(n)
+             if x0 - 0.5 <= (l[0] + l[2]) / 2 <= x1 + 0.5 and l[1] - 0.5 <= centro_y <= l[3] + 0.5),
+            key=lambda l: l[0],
+        )
+        if len(dentro) == len(texto):
+            return [(l[0], l[2]) for l in dentro]
+        # Si no cuadran (ligaduras, texto girado…), se reparte el ancho por igual
+        paso = (x1 - x0) / max(len(texto), 1)
+        return [(x0 + i * paso, x0 + (i + 1) * paso) for i in range(len(texto))]
+
+    def letra_en(self, n: int, k: int, x: float) -> int:
+        """Cuántas letras de la palabra k quedan a la izquierda de x (0 … largo de la palabra)."""
+        return sum(1 for a, b in self.bordes_letras(n, k) if (a + b) / 2 < x)
+
     def texto_entre(self, n: int, desde: int, hasta: int) -> str:
         """Texto de las palabras desde..hasta (incluidas), respetando saltos de línea."""
         return self.texto_de_palabras(n, range(desde, hasta + 1))
 
-    def texto_de_palabras(self, n: int, indices) -> str:
-        """Texto de esas palabras (por su número), en orden y respetando saltos de línea."""
+    def texto_de_palabras(self, n: int, indices, cortes: tuple[int, int] | None = None) -> str:
+        """Texto de esas palabras (por su número), en orden y respetando saltos de línea.
+
+        Con `cortes` = (desde, hasta), la primera palabra empieza en su letra `desde`
+        y la última acaba antes de su letra `hasta` (para copiar solo un trozo).
+        """
         palabras = self.palabras(n)
+        elegidas = [k for k in sorted(indices) if k < len(palabras)]
         partes, anterior = [], None
-        for w in (palabras[k] for k in sorted(indices) if k < len(palabras)):
+        for pos, k in enumerate(elegidas):
+            w = palabras[k]
+            texto = w[4]
+            if cortes is not None:
+                desde = cortes[0] if pos == 0 else 0
+                hasta = cortes[1] if pos == len(elegidas) - 1 else len(texto)
+                texto = texto[desde:hasta]
             linea = (w[5], w[6])
             if anterior is not None:
                 partes.append(" " if linea == anterior else "\n")
-            partes.append(w[4])
+            partes.append(texto)
             anterior = linea
         return "".join(partes)
 
@@ -126,6 +169,7 @@ class Documento:
 
         insertar_capa_texto(self._doc[n], palabras)
         self._palabras.pop(n, None)
+        self._letras.pop(n, None)
         self.modificado = True
 
     # --- Edición ------------------------------------------------------------
@@ -137,8 +181,10 @@ class Documento:
     def _despues_de_cambiar(self, n: int | None = None) -> None:
         if n is None:
             self._palabras.clear()
+            self._letras.clear()
         else:
             self._palabras.pop(n, None)
+            self._letras.pop(n, None)
         self.modificado = True
 
     def punto_de_deshacer(self) -> None:
@@ -175,7 +221,13 @@ class Documento:
         palabras = [todas[k] for k in sorted(indices) if k < len(todas)]
         if not palabras:
             return
-        rects = [pymupdf.Rect(w[:4]) for w in palabras]
+        self.borrar_zonas_de_texto(n, [w[:4] for w in palabras])
+
+    def borrar_zonas_de_texto(self, n: int, zonas) -> None:
+        """Borra el texto que hay en esos rectángulos (palabras enteras o trozos de palabra)."""
+        rects = [pymupdf.Rect(z) for z in zonas]
+        if not rects:
+            return
         invisible = any(l.invisible for l in edicion.lineas(self._doc[n]) if l.rect.intersects(rects[0]))
         self._antes_de_cambiar()
         edicion.borrar_zonas(self._doc[n], rects, invisible)
@@ -392,6 +444,7 @@ class Documento:
                     # Reabrir siempre, aunque falle el reemplazo, para no quedarnos sin documento
                     self._doc = pymupdf.open(destino)
                     self._palabras.clear()
+                    self._letras.clear()
                     if self._doc.needs_pass:
                         self._doc.authenticate(self._contrasena or "")
             else:

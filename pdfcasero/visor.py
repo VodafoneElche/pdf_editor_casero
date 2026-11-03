@@ -218,6 +218,8 @@ class VisorPDF(QScrollArea):
         self._seleccion: tuple[int, list[int]] | None = None  # página, índices de las palabras elegidas
         self._caja: tuple[int, QPointF, QPointF] | None = None  # Alt + arrastrar: recuadro en curso
         self._ancla: int | None = None
+        self._ancla_letra = 0  # letra de la palabra donde empezó el clic
+        self._cortes: tuple[int, int] | None = None  # trozo de la primera y la última palabra
         self._ancla_pagina = -1
 
         self.acc_copiar = QAction("Copiar", self)
@@ -433,6 +435,7 @@ class VisorPDF(QScrollArea):
             self._caja = (pagina, p, p)
         else:
             self._ancla = self.palabra_en(pagina, p)
+            self._ancla_letra = self.doc.letra_en(pagina, self._ancla, p.x()) if self._ancla is not None else 0
             self._caja = None
         self._repintar()
 
@@ -450,13 +453,25 @@ class VisorPDF(QScrollArea):
                 if x0 <= (w[0] + w[2]) / 2 <= x1 and y0 <= (w[1] + w[3]) / 2 <= y1
             ]
             self._seleccion = (pagina, dentro) if dentro else None
+            self._cortes = None
             self._repintar()
             return
         if self._ancla is None:
             return
         fin = self.palabra_en(pagina, p)
-        if fin is not None:
-            self.fijar_seleccion(pagina, self._ancla, fin)
+        if fin is None:
+            return
+        # Letra a letra: se puede coger solo un trozo de una palabra (p. ej. «2027» de «600840454-2027»)
+        a = (self._ancla, self._ancla_letra)
+        b = (fin, self.doc.letra_en(pagina, fin, p.x()))
+        (desde, letra_desde), (hasta, letra_hasta) = sorted((a, b))
+        if (desde, letra_desde) == (hasta, letra_hasta):
+            self._seleccion = self._cortes = None
+            self._repintar()
+            return
+        self._seleccion = (pagina, list(range(desde, hasta + 1)))
+        self._cortes = (letra_desde, letra_hasta)
+        self._repintar()
 
     # --- Mover la página con la mano ------------------------------------------
     @property
@@ -487,7 +502,9 @@ class VisorPDF(QScrollArea):
         return QRectF(self._caja[1], self._caja[2]).normalized()
 
     def fijar_seleccion(self, pagina: int, desde: int, hasta: int):
+        """Palabras enteras de desde a hasta (doble clic, seleccionar toda la página)."""
         self._seleccion = (pagina, list(range(min(desde, hasta), max(desde, hasta) + 1)))
+        self._cortes = None
         self._repintar()
 
     def seleccionar_pagina(self):
@@ -497,7 +514,7 @@ class VisorPDF(QScrollArea):
     def texto_seleccionado(self) -> str:
         if not self.doc or not self._seleccion:
             return ""
-        return self.doc.texto_de_palabras(*self._seleccion)
+        return self.doc.texto_de_palabras(*self._seleccion, self._cortes)
 
     def copiar(self):
         texto = self.texto_seleccionado()
@@ -508,7 +525,19 @@ class VisorPDF(QScrollArea):
         if not self.doc or not self._seleccion or self._seleccion[0] != pagina:
             return []
         palabras = self.doc.palabras(pagina)
-        return [palabras[k][:4] for k in self._seleccion[1] if k < len(palabras)]
+        indices = [k for k in self._seleccion[1] if k < len(palabras)]
+        rects = [list(palabras[k][:4]) for k in indices]
+        if self._cortes is not None and rects:
+            desde, hasta = self._cortes
+            primera = self.doc.bordes_letras(pagina, indices[0])
+            ultima = self.doc.bordes_letras(pagina, indices[-1])
+            if 0 < desde <= len(primera):
+                rects[0][0] = primera[desde - 1][1] if desde == len(primera) else primera[desde][0]
+            if 0 <= hasta < len(ultima):
+                rects[-1][2] = ultima[hasta - 1][1] if hasta > 0 else rects[-1][0]
+            # Palabras de las que no queda ninguna letra elegida
+            rects = [r for r in rects if r[2] - r[0] > 0.1]
+        return [tuple(r) for r in rects]
 
     def menu_contextual(self, posicion):
         menu = QMenu(self)
@@ -634,7 +663,7 @@ class VisorPDF(QScrollArea):
             return
         if self.doc is None or not self._seleccion:
             return
-        self.doc.borrar_palabras_elegidas(*self._seleccion)
+        self.doc.borrar_zonas_de_texto(self._seleccion[0], self.rects_seleccion(self._seleccion[0]))
         self.documento_cambiado()
 
     def documento_cambiado(self, conservar_dibujo: bool = False):

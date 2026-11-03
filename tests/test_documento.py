@@ -183,3 +183,64 @@ def test_simbolo_euro_no_se_pierde(tmp_path):
     assert "1.028,20 €" in texto and "5 €" in texto
     assert pagina.search_for("1.028,20 €")
     assert destino.stat().st_size < 200_000  # la fuente añadida se guarda recortada
+
+
+def test_seleccionar_solo_un_trozo_de_palabra(tmp_path):
+    """Como en la factura de Jose: copiar solo «2027» de «600840454-2027»."""
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QPointF
+    from PySide6.QtWidgets import QApplication
+
+    from pdfcasero.documento import Documento
+    from pdfcasero.visor import VisorPDF
+
+    origen = pymupdf.open()
+    pagina = origen.new_page()
+    pagina.insert_text((72, 100), "Resumen: 600840454-2027 Red Infinity", fontsize=12)
+    pagina.insert_text((72, 130), "Total: 10,9844", fontsize=12)
+    ruta = tmp_path / "factura.pdf"
+    origen.save(ruta)
+
+    app = QApplication.instance() or QApplication([])
+    doc = Documento(str(ruta))
+    visor = VisorPDF()
+    visor.cargar(doc)
+    palabras = doc.palabras(0)
+    k = next(i for i, w in enumerate(palabras) if w[4] == "600840454-2027")
+    bordes = doc.bordes_letras(0, k)
+    assert len(bordes) == len("600840454-2027")
+    y = (palabras[k][1] + palabras[k][3]) / 2
+    guion = "600840454-2027".index("-")
+
+    def entre(a, b):  # punto entre las letras a y b
+        return (bordes[a][1] + bordes[b][0]) / 2
+
+    # Desde justo después del guion hasta el final de la palabra
+    visor.empezar_seleccion(0, QPointF(entre(guion, guion + 1), y))
+    visor.extender_seleccion(0, QPointF(bordes[-1][1] + 0.5, y))
+    assert visor.texto_seleccionado() == "2027"
+    (x0, _, x1, _), = visor.rects_seleccion(0)
+    assert abs(x0 - bordes[guion + 1][0]) < 0.6 and abs(x1 - bordes[-1][1]) < 0.6
+    # Al revés (arrastrando hacia la izquierda) y solo la primera parte
+    visor.empezar_seleccion(0, QPointF(entre(guion - 1, guion), y))
+    visor.extender_seleccion(0, QPointF(bordes[0][0] - 0.5, y))
+    assert visor.texto_seleccionado() == "600840454"
+    # Cruzando palabras: «2027 Red Inf»
+    inf = next(i for i, w in enumerate(palabras) if w[4] == "Infinity")
+    b_inf = doc.bordes_letras(0, inf)
+    visor.empezar_seleccion(0, QPointF(entre(guion, guion + 1), y))
+    visor.extender_seleccion(0, QPointF((b_inf[2][1] + b_inf[3][0]) / 2, y))
+    assert visor.texto_seleccionado() == "2027 Red Inf"
+    # Doble clic sigue cogiendo la palabra entera
+    visor.fijar_seleccion(0, k, k)
+    assert visor.texto_seleccionado() == "600840454-2027"
+    # Borrar solo el trozo elegido deja el resto
+    visor.empezar_seleccion(0, QPointF(entre(guion, guion + 1), y))
+    visor.extender_seleccion(0, QPointF(bordes[-1][1] + 0.5, y))
+    visor.borrar_seleccion()
+    texto = doc._doc[0].get_text()
+    assert "600840454-" in texto and "2027" not in texto and "Red Infinity" in texto
+    visor.deleteLater()
+    app.processEvents()

@@ -8,6 +8,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QInputDialog, QLineEdit, QMenu, QMessageBox, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
+from .desplazamiento import DesplazamientoSuave
 from .documento import Documento, Resultado
 from .herramientas_dibujo import ControladorDibujo
 from .herramientas_formulario import ControladorFormulario
@@ -269,6 +270,12 @@ class VisorPDF(QScrollArea):
         self.setWidget(self._contenedor)
 
         self.verticalScrollBar().valueChanged.connect(self._al_desplazar)
+        self._suave_v = DesplazamientoSuave(self.verticalScrollBar())
+        self._suave_h = DesplazamientoSuave(self.horizontalScrollBar())
+        # Cuando el desplazamiento se para, se preparan las páginas de al lado
+        # para que al seguir bajando no haya que dibujarlas de golpe
+        self._temporizador_vecinas = QTimer(self, singleShot=True, interval=150)
+        self._temporizador_vecinas.timeout.connect(self._preparar_vecinas)
         self._temporizador_ajuste = QTimer(self, singleShot=True, interval=60)
         self._temporizador_ajuste.timeout.connect(self._aplicar_ajuste_ancho)
 
@@ -374,8 +381,17 @@ class VisorPDF(QScrollArea):
         if evento.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self.acercar() if evento.angleDelta().y() > 0 else self.alejar()
             evento.accept()
-        else:
-            super().wheelEvent(evento)
+            return
+        angulo, pixeles = evento.angleDelta(), evento.pixelDelta()
+        dx = DesplazamientoSuave.pixeles(angulo.x(), pixeles.x())
+        dy = DesplazamientoSuave.pixeles(angulo.y(), pixeles.y())
+        if evento.modifiers() & Qt.KeyboardModifier.ShiftModifier and not dx:
+            dx, dy = dy, 0.0  # Mayúsculas + rueda: de lado
+        if dy:
+            self._suave_v.mover(dy)
+        if dx:
+            self._suave_h.mover(dx)
+        evento.accept()
 
     # --- Navegación ------------------------------------------------------
     @property
@@ -409,7 +425,15 @@ class VisorPDF(QScrollArea):
                 self._fijar_pagina(w.indice)
                 break
 
+    def _preparar_vecinas(self):
+        if not self.doc:
+            return
+        for i in (self._pagina_actual + 1, self._pagina_actual - 1):
+            if 0 <= i < len(self._paginas):
+                self.imagen_pagina(i)
+
     def _fijar_pagina(self, i):
+        self._temporizador_vecinas.start()
         if i != self._pagina_actual:
             self._pagina_actual = i
             self.paginaCambiada.emit(i)

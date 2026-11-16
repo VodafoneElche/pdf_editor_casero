@@ -83,7 +83,8 @@ class PaginaWidget(QWidget):
         elif self._subrayando or not self.visor.rellenar_en(self, self._tupla(e)):
             recuadro = bool(e.modifiers() & Qt.KeyboardModifier.AltModifier)
             p = self._punto_pdf(e)
-            if recuadro or self.visor.palabra_en(self.indice, p, exacta=True) is not None:
+            # Con el rotulador, un clic en un hueco entre palabras también empieza a marcar
+            if recuadro or self._subrayando or self.visor.palabra_en(self.indice, p, exacta=True) is not None:
                 self.visor.empezar_seleccion(self.indice, p, recuadro)
             else:
                 # Fuera del texto: la "mano" arrastra la página, como en Acrobat

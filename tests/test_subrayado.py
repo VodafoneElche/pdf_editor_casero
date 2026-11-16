@@ -42,6 +42,16 @@ def test_subrayar_se_guarda_como_resaltado_real(apuntes, tmp_path):
     assert "fotosintesis" in texto and "oxigeno" in texto
 
 
+def test_una_linea_entera_queda_marcada_hasta_el_final(apuntes):
+    """Al arrastrar por toda una línea se marcan todas sus palabras, no solo la primera."""
+    d = Documento(apuntes)
+    linea = [w for w in d.palabras(0) if w[1] < 105]
+    d.subrayar(0, [w[:4] for w in linea], COLOR["amarillo"])
+    (_, franjas), = d.subrayados(0)
+    assert len(franjas) == 1
+    assert franjas[0].x0 <= linea[0][0] + 0.5 and franjas[0].x1 >= linea[-1][2] - 0.5
+
+
 def test_cada_color_y_quitar(apuntes):
     d = Documento(apuntes)
     for clave in ("amarillo", "verde", "rojo"):

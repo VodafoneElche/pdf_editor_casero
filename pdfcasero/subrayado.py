@@ -29,7 +29,8 @@ def _juntar_por_lineas(rects) -> list[pymupdf.Rect]:
         if ultima is not None:
             solape = min(ultima.y1, r.y1) - max(ultima.y0, r.y0)
             if solape > 0.5 * min(ultima.height, r.height):
-                ultima |= r
+                # Rect | Rect da un recuadro nuevo: hay que guardarlo en la lista
+                lineas[-1] = ultima | r
                 continue
         lineas.append(r)
     return lineas

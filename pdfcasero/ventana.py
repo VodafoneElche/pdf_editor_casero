@@ -42,7 +42,8 @@ from .dialogo_ocr import HiloOCR, asegurar_idiomas, elegir_paginas
 from .documento import ContrasenaNecesaria, Documento
 from .impresion import imprimir
 from .ventana_google import ControlGoogle
-from .visor import VisorPDF
+from .subrayado import COLOR, COLORES as COLORES_SUBRAYADO
+from .visor import VisorPDF, icono_color
 
 MAX_RECIENTES = 8
 ANCHO_MINIATURA = 110
@@ -475,6 +476,7 @@ class VentanaPrincipal(QMainWindow):
         self._crear_barra()
         self._crear_barra_dibujo()
         self._crear_barra_formulario()
+        self._crear_barra_subrayado()
         self.visor.paginaCambiada.connect(self._pagina_cambiada)
         self.visor.zoomCambiado.connect(self._zoom_cambiado)
         self.visor.documentoEditado.connect(self._documento_editado)
@@ -518,6 +520,11 @@ class VentanaPrincipal(QMainWindow):
             "Flechas, líneas, formas, globos, texto y lápiz (Ctrl+D)",
         )
         self.acc_dibujar.setCheckable(True)
+        self.acc_subrayar = self._accion(
+            "Subrayar", None, QKeySequence("Ctrl+U"), self._pulsar_subrayar,
+            "Rotulador fosforescente: arrastra sobre el texto y queda subrayado (Ctrl+U)",
+        )
+        self.acc_subrayar.setCheckable(True)
         self.acc_formulario = self._accion(
             "Formulario", None, QKeySequence("Ctrl+Shift+F"), self._cambiar_modo_formulario,
             "Crear casillas y zonas rellenables para quien reciba el PDF (Ctrl+Mayús+F)",
@@ -578,7 +585,7 @@ class VentanaPrincipal(QMainWindow):
         for a, teclas in ((self.acc_siguiente, ["Right", "Space", "Ctrl+Right"]), (self.acc_anterior, ["Left", "Shift+Space", "Ctrl+Left"])):
             a.setShortcuts([QKeySequence(t) for t in teclas])
         self._acciones_doc = [
-            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_formulario, self.acc_word, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar, self.acc_girar_izq, self.acc_girar_der,
+            self.acc_guardar, self.acc_guardar_como, self.acc_imprimir, self.acc_ocr, self.acc_editar, self.acc_dibujar, self.acc_subrayar, self.acc_formulario, self.acc_word, self.acc_anterior, self.acc_siguiente, self.acc_alejar, self.acc_acercar, self.acc_girar_izq, self.acc_girar_der,
             self.acc_ancho, self.acc_completa, self.acc_buscar, self.acc_cerrar, self.acc_proteger,
         ]
 
@@ -613,6 +620,7 @@ class VentanaPrincipal(QMainWindow):
         barra.addSeparator()
         barra.addAction(self.acc_ocr)
         barra.addAction(self.acc_editar)
+        barra.addAction(self.acc_subrayar)
         barra.addAction(self.acc_dibujar)
         self.google = ControlGoogle(self)
         barra.addWidget(self.google.boton)
@@ -687,7 +695,7 @@ class VentanaPrincipal(QMainWindow):
         else:
             self.acc_deshacer.setEnabled(False)
             self.acc_rehacer.setEnabled(False)
-            for accion in (self.acc_editar, self.acc_dibujar, self.acc_formulario):
+            for accion in (self.acc_editar, self.acc_dibujar, self.acc_subrayar, self.acc_formulario):
                 if accion.isChecked():
                     accion.setChecked(False)
             self._poner_modo("leer")
@@ -899,7 +907,7 @@ class VentanaPrincipal(QMainWindow):
         """Enseña `doc` en el visor, recordando por dónde iba el que se deja."""
         if self.doc is not None and self.doc is not doc:
             self.doc.vista = (self.visor.pagina_actual, self.visor.zoom, self.visor.ajustar_ancho)
-        for accion in (self.acc_editar, self.acc_dibujar, self.acc_formulario):
+        for accion in (self.acc_editar, self.acc_dibujar, self.acc_subrayar, self.acc_formulario):
             if accion.isChecked():
                 accion.setChecked(False)
         self._poner_modo("leer")
@@ -1257,7 +1265,10 @@ class VentanaPrincipal(QMainWindow):
 
     def _cambiar_modo(self, modo: str, activo: bool):
         """Solo un modo a la vez: al activar uno se desmarcan los otros."""
-        botones = {"editar": self.acc_editar, "dibujar": self.acc_dibujar, "formulario": self.acc_formulario}
+        botones = {
+            "editar": self.acc_editar, "dibujar": self.acc_dibujar,
+            "subrayar": self.acc_subrayar, "formulario": self.acc_formulario,
+        }
         if activo:
             for clave, accion in botones.items():
                 if clave != modo:
@@ -1268,11 +1279,14 @@ class VentanaPrincipal(QMainWindow):
         self.visor.set_modo(modo)
         self.barra_dibujo.setVisible(modo == "dibujar")
         self.barra_formulario.setVisible(modo == "formulario")
+        self.barra_subrayado.setVisible(modo == "subrayar")
         mensajes = {
             "editar": "Editar texto: haz clic en una línea para cambiarla (déjala vacía para borrarla) o en un hueco "
             "para escribir. Intro acepta, Esc cancela.",
             "dibujar": "Dibujar: elige herramienta y arrastra. Con Seleccionar mueves, estiras (cuadraditos), "
             "cambias color o borras (Supr). Doble clic cambia el texto de un globo.",
+            "subrayar": "Subrayar: arrastra sobre el texto y queda marcado (doble clic marca una palabra). "
+            "Cambia el color arriba. Para quitar una marca: «Quitar subrayado» y clic encima.",
             "formulario": "Formulario: elige el tipo de campo y arrastra donde irá. Con Seleccionar lo mueves o "
             "estiras (cuadradito), doble clic le cambia el nombre, Supr lo borra.",
         }
@@ -1377,6 +1391,54 @@ class VentanaPrincipal(QMainWindow):
         indice = min(range(len(self.GROSORES)), key=lambda i: abs(self.GROSORES[i][1] - d.grosor))
         self.combo_grosor.setCurrentIndex(indice)
         self.acc_relleno.setChecked(d.relleno)
+
+    # --- Subrayador fosforescente -------------------------------------------
+    def _pulsar_subrayar(self, activo: bool):
+        """Si ya hay texto seleccionado, se subraya al momento; si no, entra en modo rotulador."""
+        if activo and self.visor.modo == "leer" and self.visor.subrayar_seleccion():
+            self.acc_subrayar.setChecked(False)
+            return
+        self._cambiar_modo("subrayar", activo)
+
+    def _crear_barra_subrayado(self):
+        barra = QToolBar("Subrayado")
+        barra.setObjectName("barraDibujo")
+        barra.setMovable(False)
+        barra.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.addToolBar(barra)
+        grupo = QActionGroup(self)
+        guardado = self.ajustes.value("color_subrayado", "amarillo")
+        if guardado not in COLOR:
+            guardado = "amarillo"
+        self._acciones_subrayado = {}
+        for clave, nombre, rgb in COLORES_SUBRAYADO:
+            a = QAction(icono_color(rgb, 18), nombre, self, checkable=True)
+            a.setToolTip(f"Subrayar en {nombre.lower()}")
+            a.triggered.connect(lambda _=False, c=clave: self._elegir_color_subrayado(c))
+            grupo.addAction(a)
+            barra.addAction(a)
+            self._acciones_subrayado[clave] = a
+        barra.addSeparator()
+        quitar = QAction("Quitar subrayado", self, checkable=True)
+        quitar.setToolTip("Haz clic sobre una marca para quitarla")
+        quitar.triggered.connect(lambda _=False: self._elegir_color_subrayado(None))
+        grupo.addAction(quitar)
+        barra.addAction(quitar)
+        self._acciones_subrayado[None] = quitar
+        self._acciones_subrayado[guardado].setChecked(True)
+        self._elegir_color_subrayado(guardado)
+        barra.hide()
+        self.barra_subrayado = barra
+
+    def _elegir_color_subrayado(self, clave: str | None):
+        """None = goma para quitar marcas. El color elegido se recuerda para la próxima vez."""
+        self.visor.borrador_subrayado = clave is None
+        if clave is not None:
+            self.visor.color_subrayado = COLOR[clave]
+            self.ajustes.setValue("color_subrayado", clave)
+        if self.visor.modo != "subrayar" and self.doc is not None:
+            self.acc_subrayar.setChecked(True)
+            self._cambiar_modo("subrayar", True)
 
     # --- Barra de formulario -----------------------------------------------
     HERRAMIENTAS_FORMULARIO = (

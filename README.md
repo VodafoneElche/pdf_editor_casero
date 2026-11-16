@@ -19,6 +19,7 @@ Está hecho con herramientas gratuitas: [PySide6](https://doc.qt.io/qtforpython-
 | Extra | Varios PDF abiertos a la vez, cada uno en su pestaña (como en Adobe) | Hecho |
 | Extra | Seleccionar texto letra a letra (p. ej. solo «2027» de «600840454-2027»); doble clic coge la palabra entera | Hecho |
 | Extra | Una sola ventana: los PDF que abres con la app abierta van a sus pestañas; arrastrando una pestaña fuera se saca a otra ventana | Hecho |
+| Extra | Subrayador fosforescente (amarillo, verde, rosa, rojo) con Ctrl+U | Hecho |
 | Extra | Nuevo PDF en blanco (Ctrl+N) para escribir con Editar texto o dibujar; flechas ← → y barra espaciadora para pasar de página; se abre al 106 %; color «Oscuro» con letras claras | Hecho |
 | Extra | Imprimir con vista previa propia (impresora, copias, páginas, orientación automática): el cuadro de Windows 11 no la enseña | Hecho |
 | Extra | Actualizarse sola: al abrirla mira si hay versión nueva y ofrece «Actualizar ahora» (también en Más → Buscar actualizaciones) | Hecho |
@@ -64,6 +65,15 @@ Pulsa **Editar texto** (Ctrl+T) y:
 Funciona también en PDF escaneados después de "Hacer editable": la línea original se tapa con el color del papel y se escribe encima con el color de la tinta.
 
 Los PDF guardan letras sueltas, no párrafos, por eso se edita línea a línea y el texto no se recoloca solo si la línea nueva es más larga.
+
+## Subrayar con rotulador fosforescente
+
+Pulsa **Subrayar** (Ctrl+U) y elige el color en la barra: **amarillo, verde, rosa o rojo**. Después solo tienes que arrastrar sobre el texto y queda marcado al momento; doble clic marca una palabra. El modo se queda puesto para seguir subrayando, y la app recuerda el último color.
+
+- Si ya tenías texto seleccionado, Ctrl+U lo subraya directamente. También con clic derecho → «Subrayar en…».
+- Para quitar una marca: **Quitar subrayado** y clic encima (o clic derecho → «Quitar subrayado»). Ctrl+Z también deshace.
+- Las marcas se guardan como resaltados PDF de verdad: se ven igual en Adobe, Chrome, Edge o el móvil.
+- Funciona sobre texto real; en un escaneo, pasa antes **Hacer editable** (OCR).
 
 ## Dibujar y hacer esquemas
 

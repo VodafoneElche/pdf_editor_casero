@@ -5,12 +5,13 @@ from __future__ import annotations
 from collections import OrderedDict
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QGuiApplication, QImage, QKeySequence, QPainter, QPen, QWheelEvent
+from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QInputDialog, QLineEdit, QMenu, QMessageBox, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from .documento import Documento, Resultado
 from .herramientas_dibujo import ControladorDibujo
 from .herramientas_formulario import ControladorFormulario
+from .subrayado import COLOR, COLORES
 
 # 100 % de zoom = tamaño real en una pantalla de 96 ppp
 PUNTOS_A_PIXELES = 96 / 72
@@ -43,6 +44,10 @@ class PaginaWidget(QWidget):
     def _formulario(self) -> bool:
         return self.visor.modo == "formulario"
 
+    @property
+    def _subrayando(self) -> bool:
+        return self.visor.modo == "subrayar"
+
     def mouseReleaseEvent(self, e):
         if self.visor.arrastrando:
             self.visor.terminar_arrastre()
@@ -56,6 +61,8 @@ class PaginaWidget(QWidget):
             self.visor.formulario.soltar(self.indice, self._tupla(e))
         else:
             self.visor.terminar_seleccion()
+            if self._subrayando:
+                self.visor.subrayar_seleccion()
 
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.MiddleButton:
@@ -71,7 +78,9 @@ class PaginaWidget(QWidget):
             self.visor.formulario.pulsar(self.indice, self._tupla(e))
         elif self.visor.modo_edicion:
             self.visor.editar_en(self, self._punto_pdf(e))
-        elif not self.visor.rellenar_en(self, self._tupla(e)):
+        elif self._subrayando and self.visor.borrador_subrayado:
+            self.visor.quitar_subrayado_en(self.indice, self._tupla(e))
+        elif self._subrayando or not self.visor.rellenar_en(self, self._tupla(e)):
             recuadro = bool(e.modifiers() & Qt.KeyboardModifier.AltModifier)
             p = self._punto_pdf(e)
             if recuadro or self.visor.palabra_en(self.indice, p, exacta=True) is not None:
@@ -106,9 +115,13 @@ class PaginaWidget(QWidget):
         if self.visor.modo_edicion:
             self.setCursor(Qt.CursorShape.IBeamCursor)
             return
+        if self._subrayando and self.visor.borrador_subrayado:
+            hay = self.visor.doc is not None and self.visor.doc.subrayado_en(self.indice, p.x(), p.y()) is not None
+            self.setCursor(Qt.CursorShape.PointingHandCursor if hay else Qt.CursorShape.ArrowCursor)
+            return
         if e.buttons() & Qt.MouseButton.LeftButton:
             self.visor.extender_seleccion(self.indice, p)
-        elif self.visor.doc is not None and self.visor.doc.campo_en(self.indice, p.x(), p.y()) is not None:
+        elif not self._subrayando and self.visor.doc is not None and self.visor.doc.campo_en(self.indice, p.x(), p.y()) is not None:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             return
         sobre_texto = self.visor.palabra_en(self.indice, p, exacta=True) is not None
@@ -121,14 +134,17 @@ class PaginaWidget(QWidget):
         if self._formulario:
             self.visor.formulario.doble_clic(self.indice, self._tupla(e))
             return
-        if self.visor.modo_edicion:
+        if self.visor.modo_edicion or (self._subrayando and self.visor.borrador_subrayado):
             return
         i = self.visor.palabra_en(self.indice, self._punto_pdf(e), exacta=True)
         if i is not None:
             self.visor.fijar_seleccion(self.indice, i, i)
+            if self._subrayando:  # doble clic con el rotulador: marca esa palabra
+                self.visor.subrayar_seleccion()
 
     def contextMenuEvent(self, e):
-        self.visor.menu_contextual(e.globalPos())
+        p = e.pos() / self.visor.escala
+        self.visor.menu_contextual(e.globalPos(), self.indice, (p.x(), p.y()))
 
     def paintEvent(self, _evento):
         p = QPainter(self)
@@ -235,6 +251,8 @@ class VisorPDF(QScrollArea):
         self.modo = "leer"
         self.dibujo = ControladorDibujo(self)
         self.formulario = ControladorFormulario(self)
+        self.color_subrayado = COLOR["amarillo"]
+        self.borrador_subrayado = False  # True: un clic sobre una marca la quita
         self._editor: EditorEnLinea | None = None
         self._arrastre = None  # (posición inicial, scroll horizontal, scroll vertical)
 
@@ -539,13 +557,46 @@ class VisorPDF(QScrollArea):
             rects = [r for r in rects if r[2] - r[0] > 0.1]
         return [tuple(r) for r in rects]
 
-    def menu_contextual(self, posicion):
+    def menu_contextual(self, posicion, pagina: int | None = None, punto=None):
         menu = QMenu(self)
         self.acc_copiar.setEnabled(bool(self._seleccion))
         menu.addAction(self.acc_copiar)
         menu.addAction(self.acc_sel_pagina)
+        if self.doc is not None and self.modo in ("leer", "subrayar"):
+            if self._seleccion:
+                menu.addSeparator()
+                for _, nombre, rgb in COLORES:
+                    a = menu.addAction(icono_color(rgb), f"Subrayar en {nombre.lower()}")
+                    a.triggered.connect(lambda _=False, c=rgb: self.subrayar_seleccion(c))
+            if pagina is not None and self.doc.subrayado_en(pagina, *punto) is not None:
+                menu.addSeparator()
+                quitar = menu.addAction("Quitar subrayado")
+                quitar.triggered.connect(lambda: self.quitar_subrayado_en(pagina, punto))
         menu.exec(posicion)
         self.acc_copiar.setEnabled(True)
+
+    # --- Subrayador fosforescente ---------------------------------------------
+    def subrayar_seleccion(self, rgb=None) -> bool:
+        """Pinta con el rotulador el texto seleccionado (con el color elegido en la barra)."""
+        if self.doc is None or not self._seleccion:
+            return False
+        pagina = self._seleccion[0]
+        rects = self.rects_seleccion(pagina)
+        if not rects:
+            return False
+        self.doc.subrayar(pagina, rects, rgb or self.color_subrayado)
+        self.documento_cambiado()
+        return True
+
+    def quitar_subrayado_en(self, pagina: int, p) -> bool:
+        if self.doc is None:
+            return False
+        xref = self.doc.subrayado_en(pagina, *p)
+        if xref is None:
+            return False
+        self.doc.quitar_subrayado(pagina, xref)
+        self.documento_cambiado()
+        return True
 
     # --- Edición de texto ---------------------------------------------------
     @property
@@ -553,7 +604,7 @@ class VisorPDF(QScrollArea):
         return self.modo == "editar"
 
     def set_modo(self, modo: str):
-        """'leer' (seleccionar texto y rellenar campos), 'editar' (texto), 'dibujar' o 'formulario'."""
+        """'leer' (seleccionar texto y rellenar campos), 'editar' (texto), 'dibujar', 'subrayar' o 'formulario'."""
         self.modo = modo
         self._seleccion = self._ancla = self._caja = None
         self.dibujo.cancelar()
@@ -686,3 +737,10 @@ class VisorPDF(QScrollArea):
     def _repintar(self):
         for w in self._paginas:
             w.update()
+
+
+def icono_color(rgb, tam: int = 16) -> QIcon:
+    """Cuadradito del color, para menús y botones."""
+    pix = QPixmap(tam, tam)
+    pix.fill(QColor.fromRgbF(*rgb))
+    return QIcon(pix)

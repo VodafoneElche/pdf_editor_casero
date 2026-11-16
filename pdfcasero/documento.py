@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pymupdf
 
-from . import dibujo, edicion, formularios
+from . import dibujo, edicion, formularios, subrayado
 
 MAX_DESHACER = 30
 
@@ -375,6 +375,27 @@ class Documento:
     def borrar_dibujo(self, n: int, xref: int) -> None:
         self._antes_de_cambiar()
         dibujo.borrar(self._doc[n], xref)
+        self._despues_de_cambiar(n)
+
+    # --- Subrayador -----------------------------------------------------------
+    def subrayar(self, n: int, rects, rgb) -> int | None:
+        """Marca con el rotulador fosforescente los recuadros (de palabras) dados."""
+        if not rects:
+            return None
+        self._antes_de_cambiar()
+        xref = subrayado.subrayar(self._doc[n], rects, rgb)
+        self._despues_de_cambiar(n)
+        return xref
+
+    def subrayados(self, n: int):
+        return subrayado.subrayados(self._doc[n])
+
+    def subrayado_en(self, n: int, x: float, y: float) -> int | None:
+        return subrayado.subrayado_en(self._doc[n], x, y)
+
+    def quitar_subrayado(self, n: int, xref: int) -> None:
+        self._antes_de_cambiar()
+        subrayado.quitar(self._doc[n], xref)
         self._despues_de_cambiar(n)
 
     @property
